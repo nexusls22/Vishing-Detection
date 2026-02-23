@@ -8,6 +8,8 @@
   - Numpy
   - librosa
   - Tensorflow
+  - Flask
+  - pyFLAC
 
 ##Specs: 
 
