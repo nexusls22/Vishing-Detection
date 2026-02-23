@@ -3,6 +3,11 @@
 ##Manual:
 
 
+##Pakets:
+
+  - Numpy
+  - librosa
+  - Tensorflow
 
 ##Specs: 
 
