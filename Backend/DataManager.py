@@ -1,5 +1,3 @@
-from typing import Callable
-
 import numpy as np
 import pandas as pd
 import soundfile as sf
@@ -7,12 +5,14 @@ import os
 import librosa
 from pathlib import Path
 from itables import init_notebook_mode, show
+from itables.widget import ITable
 from pandas import DataFrame
 from pandas.io.parsers import TextFileReader
 
 
 class DataManager:
 
+    init_notebook_mode(connected=True)
     data_folder_path = ''
 
     def __init__(self, data_folder_path):
@@ -79,10 +79,10 @@ class DataManager:
 
         if results:
             results_df = pd.DataFrame(results)
-            print('\nSummary')
-            print(results_df)
-
-        return results
+            return results_df
+        else:
+            return None
 
     def preprocess_data(self):
         """Preprocess data for training and evaluation."""
+
