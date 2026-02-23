@@ -1,3 +1,5 @@
+from typing import Callable
+
 import numpy as np
 import pandas as pd
 import soundfile as sf
@@ -5,6 +7,8 @@ import os
 import librosa
 from pathlib import Path
 from itables import init_notebook_mode, show
+from pandas import DataFrame
+from pandas.io.parsers import TextFileReader
 
 
 class DataManager:
@@ -31,16 +35,54 @@ class DataManager:
 
 
 
+
+    def load_protocol(self):
+        return pd.read_csv(self.train_protocol_path, sep=' ', header = None, names = ['speaker_id', 'file_name', 'system_id', 'attack_type','key'])
+
     def load_data(self):
-        data_list = []
+        test_df = self.load_protocol()
 
-        if not data_list:
-            print('Loading data...')
-            print('------------------------')
+        results = []
 
-        for i in os.listdir(self.train_data_path):
-            data_list.append(i)
-            print(i)
+        test_bonafide_df = test_df[test_df['key'] == 'bonafide']['file_name'].iloc[:len(test_df)].tolist()
+        test_spoof_df = test_df[test_df['key'] == 'spoof']['file_name'].iloc[:len(test_df)].tolist()
+        test_samples = test_bonafide_df + test_spoof_df
+
+        for f in test_samples[:10]: #Input method to set number of samples
+            try:
+                file_path = os.path.join(self.train_data_path, f + '.flac')
+                y, sr = sf.read(file_path, dtype='float32')
+
+                if y.ndim > 1:
+                    y = y.mean(axis=1)
+
+                if sr != 16000:
+                    y = librosa.resample(y, orig_sr=sr, target_sr=16000)
+                    sr = 16000
+
+                key = test_df[test_df['file_name'] == f]['key'].values[0]
+                attack = test_df[test_df['file_name'] == f]['attack_type'].values[0]
+
+                results.append({
+                    'filename': f,
+                    'label': key,
+                    'attack': attack,
+                    'duration': len(y) / sr,
+                    'mean': y.mean(),
+                    'std': y.std(),
+                    'max': y.max(),
+                    'min': y.min()
+                })
+
+            except Exception as e:
+                print(f"{f}: {e}")
+
+        if results:
+            results_df = pd.DataFrame(results)
+            print('\nSummary')
+            print(results_df)
+
+        return results
 
     def preprocess_data(self):
         """Preprocess data for training and evaluation."""
