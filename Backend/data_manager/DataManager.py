@@ -1,26 +1,26 @@
-import numpy as np
 import pandas as pd
 import soundfile as sf
 import os
 import librosa
-from pathlib import Path
-from itables import init_notebook_mode, show
-from itables.widget import ITable
-from pandas import DataFrame
-from pandas.io.parsers import TextFileReader
-
+from itables import init_notebook_mode
 
 class DataManager:
 
     init_notebook_mode(connected=True)
     data_folder_path = ''
+    results = []
+    input_sample_size = int(input("Please enter the number of samples to be tested: "))
+
 
     def __init__(self, data_folder_path):
         self.data_folder_path = data_folder_path
-        self.train_data_path = self.data_folder_path + 'ASVspoof2019_LA_train/flac'
-        self.train_protocol_path = self.data_folder_path + 'ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.train.trn.txt'
+        self.train_data_path = self.data_folder_path + 'ASVspoof2019_LA_dev/flac'
+        self.train_protocol_path = self.data_folder_path + 'ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.dev.trl.txt'
 
-    def check_data(self):
+    def load_protocol(self):
+        return pd.read_csv(self.train_protocol_path, sep=' ', header = None, names = ['speaker_id', 'file_name', 'system_id', 'attack_type','key'])
+
+    def check_data_dir(self):
         elements_in_dir = []
 
         print('Data Directory Contents:')
@@ -32,23 +32,26 @@ class DataManager:
 
         print('------------------------')
 
+    def check_data_files(self):
+        elements_in_dir = []
 
+        print('Data Files:')
+        print('------------------------')
 
+        for i in os.listdir(self.train_data_path):
+            elements_in_dir.append(i)
+            print(i)
 
+        print('------------------------')
 
-    def load_protocol(self):
-        return pd.read_csv(self.train_protocol_path, sep=' ', header = None, names = ['speaker_id', 'file_name', 'system_id', 'attack_type','key'])
-
-    def load_data(self):
+    def load_data(self, results, input_sample_size):
         test_df = self.load_protocol()
-
-        results = []
 
         test_bonafide_df = test_df[test_df['key'] == 'bonafide']['file_name'].iloc[:len(test_df)].tolist()
         test_spoof_df = test_df[test_df['key'] == 'spoof']['file_name'].iloc[:len(test_df)].tolist()
         test_samples = test_bonafide_df + test_spoof_df
 
-        for f in test_samples[:10]: #Input method to set number of samples
+        for f in test_samples[:input_sample_size]:
             try:
                 file_path = os.path.join(self.train_data_path, f + '.flac')
                 y, sr = sf.read(file_path, dtype='float32')
@@ -79,6 +82,7 @@ class DataManager:
 
         if results:
             results_df = pd.DataFrame(results)
+
             return results_df
         else:
             return None
