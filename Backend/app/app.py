@@ -10,14 +10,14 @@ results = []
 def main():
     data_manager = DataManager(data_folder_path)
     get_dir_info(data_manager)
-    get_files_list(data_manager)
+    #get_files_list(data_manager)
 
 
 def get_i_table():
     data_manager = DataManager(data_folder_path)
-    df = data_manager.load_data(results, data_manager.input_sample_size)
+    df, f_df = data_manager.load_data(results, data_manager.input_sample_size)
 
-    return df
+    return df, f_df
 
 def get_dir_info(data_manager):
     return data_manager.check_data_dir()

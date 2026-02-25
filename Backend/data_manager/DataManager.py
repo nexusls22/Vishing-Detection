@@ -1,8 +1,11 @@
 import pandas as pd
 import soundfile as sf
+import numpy as np
 import os
 import librosa
 from itables import init_notebook_mode
+
+
 
 class DataManager:
 
@@ -46,19 +49,29 @@ class DataManager:
 
     def load_data(self, results, input_sample_size):
         test_df = self.load_protocol()
+        features_dict = {}
 
+        #Sample lists
         test_bonafide_df = test_df[test_df['key'] == 'bonafide']['file_name'].iloc[:len(test_df)].tolist()
         test_spoof_df = test_df[test_df['key'] == 'spoof']['file_name'].iloc[:len(test_df)].tolist()
         test_samples = test_bonafide_df + test_spoof_df
+
+        #Check for valid audio files
+        if not test_bonafide_df:
+            print("No bonafide samples found.")
+        if not test_spoof_df:
+            print("No spoof samples found.")
 
         for f in test_samples[:input_sample_size]:
             try:
                 file_path = os.path.join(self.train_data_path, f + '.flac')
                 y, sr = sf.read(file_path, dtype='float32')
 
+                #Convert to mono sound
                 if y.ndim > 1:
                     y = y.mean(axis=1)
 
+                #Resample to 16kHz
                 if sr != 16000:
                     y = librosa.resample(y, orig_sr=sr, target_sr=16000)
                     sr = 16000
@@ -66,6 +79,7 @@ class DataManager:
                 key = test_df[test_df['file_name'] == f]['key'].values[0]
                 attack = test_df[test_df['file_name'] == f]['attack_type'].values[0]
 
+                #Extract features and append to results
                 results.append({
                     'filename': f,
                     'label': key,
@@ -76,17 +90,52 @@ class DataManager:
                     'max': y.max(),
                     'min': y.min()
                 })
+                features_dict = self.extract_features(y, sr)
 
             except Exception as e:
                 print(f"{f}: {e}")
 
-        if results:
-            results_df = pd.DataFrame(results)
 
-            return results_df
+
+        #Build dataframe out of results
+        if results and features_dict:
+            results_df = pd.DataFrame(results)
+            features_df = pd.DataFrame.from_dict(features_dict)
+
+            return results_df, features_df
         else:
-            return None
+            return print("No valid audio files found.")
+
+    def extract_features(self, y, sr):
+
+        features = {}
+
+        #MFCC (Mel Frequency Cepstral Coefficients)
+        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
+        for i in range(13):
+            features[f'mfcc__{i}__mean'] = np.mean(mfcc[i])
+            features[f'mfcc__{i}__std'] = np.std(mfcc[i])
+
+        #Spectral features
+        features['spectral_centroid_mean'] = np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)[0])
+        features['spectral_bandwidth_mean'] = np.mean(librosa.feature.spectral_bandwidth(y=y, sr=sr)[0])
+        features['rolloff_mean'] = np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr)[0])
+        features['contrast_mean'] = np.mean(librosa.feature.spectral_contrast(y=y, sr=sr)[0])
+        features['zero_crossing_rate_mean'] = np.mean(librosa.feature.zero_crossing_rate(y=y)[0])
+
+        #Energy and RMS (root-mean-square)
+        features['rms'] = librosa.feature.rms(y=y)[0]
+
+        #Pitch
+        pitches, magnitudes = librosa.piptrack(y=y, sr=sr)
+        features['pitches_mean'] = np.mean(pitches[pitches > 0] if np.any(pitches > 0) else 0)
+
+
+
+        return features
 
     def preprocess_data(self):
-        """Preprocess data for training and evaluation."""
+        """Preprocess data fortraining and evaluation."""
+
+
 
