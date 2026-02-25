@@ -13,6 +13,15 @@ class DataManager:
     results = []
     input_sample_size = int(input("Please enter the number of samples to be tested: "))
 
+#data cleaning
+#normalization
+#feature engineering
+#which model to use for multiclass classification
+#Fusion in detail, also which model to use for fusion  
+
+#visualization
+
+
 
     def __init__(self, data_folder_path):
         self.data_folder_path = data_folder_path
