@@ -10,6 +10,8 @@ results = []
 def main():
     data_manager = DataManager(data_folder_path)
     get_dir_info(data_manager)
+    df, f_df = get_i_table()
+    check_data_files(data_manager, df)
     #get_files_list(data_manager)
 
 
@@ -24,3 +26,6 @@ def get_dir_info(data_manager):
 
 def get_files_list(data_manager):
     return data_manager.check_data_files()
+
+def check_data_files(data_manager, df):
+    return data_manager.check_data_quality(df)
