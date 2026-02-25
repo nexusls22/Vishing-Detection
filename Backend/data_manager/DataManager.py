@@ -6,7 +6,6 @@ import librosa
 from itables import init_notebook_mode
 
 
-
 class DataManager:
 
     init_notebook_mode(connected=True)
@@ -134,8 +133,28 @@ class DataManager:
 
         return features
 
+
+    def check_data_quality(self, features_df):
+
+        # Search for missing entries
+        missing_entries = features_df.isnull().sum()
+        if not missing_entries.empty:
+            print(f"Found {len(missing_entries)} missing entries:")
+            print(missing_entries)
+        else:
+            print("No missing entries found.")
+
+        #Search for duplicate entrie
+        duplicate_entries = features_df.duplicated(subset=['filename'], keep=False)
+        if not duplicate_entries.empty:
+            print(f"Found {len(duplicate_entries)} duplicate entries:")
+            print(duplicate_entries)
+        else:
+            print("No duplicate entries found.")
+
+        #Search for outliers
+
     def preprocess_data(self):
         """Preprocess data fortraining and evaluation."""
-
-
+        return
 
