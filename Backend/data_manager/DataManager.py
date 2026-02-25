@@ -17,7 +17,7 @@ class DataManager:
 #normalization
 #feature engineering
 #which model to use for multiclass classification
-#Fusion in detail, also which model to use for fusion  
+#Fusion in detail, also which model to use for fusion
 
 #visualization
 
