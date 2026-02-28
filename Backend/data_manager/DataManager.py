@@ -3,12 +3,10 @@ import soundfile as sf
 import numpy as np
 import os
 import librosa
-from itables import init_notebook_mode
 
 
 class DataManager:
 
-    init_notebook_mode(connected=True)
     data_folder_path = ''
     results = []
     input_sample_size = int(input("Please enter the number of samples to be tested: "))
@@ -27,6 +25,8 @@ class DataManager:
         self.data_folder_path = data_folder_path
         self.train_data_path = self.data_folder_path + 'ASVspoof2019_LA_dev/flac'
         self.train_protocol_path = self.data_folder_path + 'ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.dev.trl.txt'
+        self.results = []
+
 
     def load_protocol(self):
         return pd.read_csv(self.train_protocol_path, sep=' ', header = None, names = ['speaker_id', 'file_name', 'system_id', 'attack_type','key'])

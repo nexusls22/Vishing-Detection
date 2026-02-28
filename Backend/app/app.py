@@ -1,5 +1,6 @@
 import os.path
 from itables import init_notebook_mode, show
+from matplotlib import pyplot as plt
 
 from Backend.data_manager.DataManager import DataManager
 
@@ -10,13 +11,16 @@ results = []
 def main():
     data_manager = DataManager(data_folder_path)
     get_dir_info(data_manager)
-    df, f_df = get_i_table()
+    df, f_df = get_i_table(data_manager)
+    print(df['label'].tail(10))
+    show(df)
+    df.boxplot(column='duration', by='label')
+    #show(f_df)
     check_data_files(data_manager, df)
     #get_files_list(data_manager)
 
 
-def get_i_table():
-    data_manager = DataManager(data_folder_path)
+def get_i_table(data_manager):
     df, f_df = data_manager.load_data(results, data_manager.input_sample_size)
 
     return df, f_df
