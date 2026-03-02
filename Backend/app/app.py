@@ -1,35 +1,28 @@
 import os.path
-from itables import init_notebook_mode, show
-from matplotlib import pyplot as plt
+from itables import show
 
 from Backend.data_manager.DataManager import DataManager
 
-init_notebook_mode(all_interactive=True)
 data_folder_path = os.path.abspath(os.sep) + 'Users/Luis/Desktop/LA/LA/'
+input_sample_size = 300
+data_manager = DataManager(data_folder_path, input_sample_size)
 results = []
 
+
 def main():
-    data_manager = DataManager(data_folder_path)
-    get_dir_info(data_manager)
-    df, f_df = get_i_table(data_manager)
-    print(df['label'].tail(10))
-    show(df)
+
+    get_dir_info()
+    df = get_data()
+    show(df, maxBytes=0)
+    print(df['label'].value_counts())
     df.boxplot(column='duration', by='label')
-    #show(f_df)
-    check_data_files(data_manager, df)
-    #get_files_list(data_manager)
+    check_data_files(df)
 
+def get_data():
+    return data_manager.load_data(input_sample_size)
 
-def get_i_table(data_manager):
-    df, f_df = data_manager.load_data(results, data_manager.input_sample_size)
+def get_dir_info():
+    return data_manager.check_directory(data_folder_path)
 
-    return df, f_df
-
-def get_dir_info(data_manager):
-    return data_manager.check_data_dir()
-
-def get_files_list(data_manager):
-    return data_manager.check_data_files()
-
-def check_data_files(data_manager, df):
+def check_data_files(df):
     return data_manager.check_data_quality(df)
