@@ -11,7 +11,7 @@ import seaborn as sns
 from typing import Optional, Tuple, List, Literal
 
 
-class DataManager:
+class data_manager:
 
     def __init__(self, data_folder_path: str, subset: Literal['train', 'dev', 'eval'], input_sample_size: int):
 
@@ -238,9 +238,8 @@ class DataManager:
         # 4. Outlier detection (IQR) for numeric columns
         numeric_cols = df.select_dtypes(include=[np.number]).columns
         outlier_summary = {}
-
-        print("\nOutliers (IQR method) in numeric columns:")
         
+        print("\nOutliers (IQR method) in numeric columns:")
         for col in numeric_cols:
             Q1 = df[col].quantile(0.25)
             Q3 = df[col].quantile(0.75)
