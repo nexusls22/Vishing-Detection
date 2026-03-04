@@ -192,6 +192,7 @@ class DataManager:
         # 1. Missing values per column
         missing = df.isnull().sum()
         missing = missing[missing > 0]
+
         if not missing.empty:
             print("\nColumns with missing values:")
             for col, count in missing.items():
@@ -237,7 +238,9 @@ class DataManager:
         # 4. Outlier detection (IQR) for numeric columns
         numeric_cols = df.select_dtypes(include=[np.number]).columns
         outlier_summary = {}
+
         print("\nOutliers (IQR method) in numeric columns:")
+        
         for col in numeric_cols:
             Q1 = df[col].quantile(0.25)
             Q3 = df[col].quantile(0.75)
