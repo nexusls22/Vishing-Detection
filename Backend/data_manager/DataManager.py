@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pandas as pd
 import numpy as np
 import os
@@ -6,20 +8,32 @@ import soundfile as sf
 import random
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Literal
+
 
 class DataManager:
 
-    def __init__(self, data_folder_path: str, input_sample_size: int):
+    def __init__(self, data_folder_path: str, subset: Literal['train', 'dev', 'eval'], input_sample_size: int):
 
-        self.data_folder_path = data_folder_path
-        self.train_data_path = os.path.join(data_folder_path, 'ASVspoof2019_LA_dev', 'flac')
-        self.train_protocol_path = os.path.join(
-            data_folder_path,
-            'ASVspoof2019_LA_cm_protocols',
-            'ASVspoof2019.LA.cm.dev.trl.txt'
-        )
+        self.data_folder_path = Path(data_folder_path)
+        self.subset = subset
         self.input_sample_size = input_sample_size
+
+        sub_folder = f'ASVspoof2019_LA_{subset}'
+        self.audio_path = self.data_folder_path / sub_folder / 'flac'
+
+        protool_mapping = {
+            'train': 'ASVspoof2019.LA.cm.train.trn.txt',
+            'dev': 'ASVspoof2019.LA.cm.dev.trl.txt',
+            'eval': 'ASVspoof2019.LA.cm.eval.trl.txt'
+        }
+
+        protocol_file = protool_mapping[subset]
+
+        protocol_path = self.data_folder_path / 'ASVspoof2019_LA_cm_protocols' / protocol_file
+        self.train_protocol_path = protocol_path
+
+
 
     #Helper
     def load_protocol(self) -> pd.DataFrame:
@@ -69,9 +83,7 @@ class DataManager:
         return features
 
     #Load data
-    def load_data(self, input_sample_size: Optional[int] = None) -> pd.DataFrame:
-        if input_sample_size is None:
-            input_sample_size = self.input_sample_size
+    def load_data(self) -> pd.DataFrame:
 
         protocol_df = self.load_protocol()
 
@@ -80,7 +92,7 @@ class DataManager:
         spoof_files = protocol_df[protocol_df['label'] == 'spoof']['file_name'].tolist()
 
         # Balanced sampling
-        n_per_class = input_sample_size // 2
+        n_per_class = self.input_sample_size // 2
         if len(bonafide_files) < n_per_class or len(spoof_files) < n_per_class:
             print("Warning: One class has fewer files than requested. Adjusting sample.")
             n_per_class = min(len(bonafide_files), len(spoof_files), n_per_class)
@@ -97,7 +109,7 @@ class DataManager:
 
         for idx, fname in enumerate(selected_files):
             try:
-                file_path = os.path.join(self.train_data_path, fname + '.flac')
+                file_path = os.path.join(self.audio_path, fname + '.flac')
                 y, sr = sf.read(file_path, dtype='float32')
 
                 # Convert to mono
