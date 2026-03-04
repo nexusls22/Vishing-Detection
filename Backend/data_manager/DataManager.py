@@ -29,13 +29,11 @@ class DataManager:
         }
 
         protocol_file = protool_mapping[subset]
-
         protocol_path = self.data_folder_path / 'ASVspoof2019_LA_cm_protocols' / protocol_file
         self.train_protocol_path = protocol_path
 
 
-
-    #Helper
+    # Helper
     def load_protocol(self) -> pd.DataFrame:
         return pd.read_csv(
             self.train_protocol_path,
@@ -44,7 +42,7 @@ class DataManager:
             names=['speaker_id', 'file_name', 'system_id', 'attack_type', 'label']
         )
 
-    #Check directory
+    # Check directory
     def check_directory(self, path: str, description: str = "Directory") -> None:
         print(f"\n{description} ({path}):")
         print("-" * 40)
@@ -55,8 +53,8 @@ class DataManager:
             print(f"Directory not found: {path}")
         print("-" * 40)
 
-    #Extract features
-    def extract_features(self, y: np.ndarray, sr: int, filename: str) -> dict:
+    # Extract features
+    def extract_audio_features(self, y: np.ndarray, sr: int, filename: str) -> dict:
         features = {'filename': filename}
 
         # MFCCs (13 coefficients)
@@ -81,6 +79,35 @@ class DataManager:
         features['pitch_mean'] = np.mean(pitches_flat) if len(pitches_flat) > 0 else 0.0
 
         return features
+
+    def extract_feature_array(self, df):
+        # f64 features
+        f64 = np.array([
+            df['duration'].values,
+            df['spectral_centroid_mean'].values,
+            df['spectral_bandwidth_mean'].values,
+            df['rolloff_mean'].values,
+            df['zero_crossing_rate_mean'].values
+        ], dtype=np.float64)
+
+        # f32 features
+        f32 = np.array([
+            df['mean_amplitude'].values,
+            df['std_amplitude'].values,
+            df['max_amplitude'].values,
+            df['min_amplitude'].values,
+            df['mfcc_3_mean'].values,
+            df['mfcc_3_std'].values,
+            df['mfcc_6_mean'].values,
+            df['mfcc_6_std'].values,
+            df['mfcc_9_mean'].values,
+            df['mfcc_9_std'].values,
+            df['mfcc_12_mean'].values,
+            df['mfcc_12_std'].values
+        ], dtype=np.float32)
+
+        # Transposition from (samples, features) to (features, samples)
+        return f64.T, f32.T
 
     #Load data
     def load_data(self) -> pd.DataFrame:
@@ -137,7 +164,7 @@ class DataManager:
                     'min_amplitude': np.min(y)
                 })
 
-                feat_dict = self.extract_features(y, sr, fname)
+                feat_dict = self.extract_audio_features(y, sr, fname)
                 all_features.append(feat_dict)
 
             except Exception as e:
