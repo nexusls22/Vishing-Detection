@@ -1,5 +1,4 @@
 from pathlib import Path
-
 import pandas as pd
 import numpy as np
 import os
@@ -8,10 +7,10 @@ import soundfile as sf
 import random
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import Optional, Tuple, List, Literal
+from typing import Tuple, List, Literal
 
 
-class data_manager:
+class DataManager:
 
     def __init__(self, data_folder_path: str, subset: Literal['train', 'dev', 'eval'], input_sample_size: int):
 
