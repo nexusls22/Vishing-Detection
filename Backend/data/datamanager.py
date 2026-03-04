@@ -41,7 +41,7 @@ class DataManager:
         )
 
     # ----------------------------------------------------------------------
-    # EDA methods (KI)
+    # EDA methods (AI)
     # ----------------------------------------------------------------------
     def summary_statistics(self, df: pd.DataFrame, group_by_label: bool = True) -> None:
         numeric_cols = df.select_dtypes(include=[np.number]).columns
