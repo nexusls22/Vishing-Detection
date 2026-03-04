@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from Backend.data_manager.DataManager import DataManager
+from Backend.data_manager.data_manager import data_manager
 
 
 class NeuralNetwork(nn.Module):
