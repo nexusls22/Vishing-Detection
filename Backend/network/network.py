@@ -8,4 +8,4 @@ class NeuralNetwork(nn.Module):
         self.linear = nn.Linear(input_dimension, 1)
 
     def forward(self, x):
-        return self.linear(x)
+        return self.linear(x) # Logits

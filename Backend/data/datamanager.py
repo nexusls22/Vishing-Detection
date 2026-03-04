@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Tuple, List, Literal
 
-
+#Needs to be reworked == Logik to call other classes and methods of them
 class DataManager:
 
     def __init__(self, data_folder_path: str, subset: Literal['train', 'dev', 'eval'], input_sample_size: int):
