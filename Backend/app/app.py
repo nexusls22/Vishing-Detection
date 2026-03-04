@@ -1,11 +1,11 @@
 import os.path
 from itables import show
 
-from Backend.data.data_manager import data_manager
+from Backend.data.datamanager import DataManager
 
 data_folder_path = os.path.abspath(os.sep) + 'Users/Luis/Desktop/LA/LA/'
 input_sample_size = 300
-data_manager = data_manager(data_folder_path, 'train', input_sample_size)
+data_manager = DataManager(data_folder_path, 'train', input_sample_size)
 results = []
 
 
