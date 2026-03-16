@@ -55,6 +55,13 @@ class DataManager:
                 print(f"\n--- {label.upper()} ---")
                 print(subset[numeric_cols].describe())
 
+    @staticmethod
+    def plot_scatter_by_class(df, feature_x='duration', feature_y='freq_mean'):
+        plt.figure(figsize=(10, 6))
+        sns.scatterplot(data=df, x=feature_x, y=feature_y, hue='label', alpha=0.5)
+        plt.title(f'Scatterplot: {feature_x} vs. {feature_y}')
+        plt.show()
+
     def plot_feature_distributions(self, df: pd.DataFrame, features: List[str], 
                                     bins: int = 50, figsize: Tuple[int, int] = (15, 10)) -> None:
         if 'label' not in df.columns:
