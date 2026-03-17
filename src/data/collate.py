@@ -1,6 +1,10 @@
+import torch
+from torch.nn.utils.rnn import pad_sequence
+
+
 def collate_fn(batch):
     input_values = [item['input_values'] for item in batch]
-    label = [item['label'] for item in batch]
+    labels = [item['label'] for item in batch]
 
     input_values_padded = pad_sequence(input_values, batch_first=True)
 

@@ -1,8 +1,10 @@
 # Dataset class (path where data is found, subset for right protocol to dataset, processor for computing, sample rate has to 16KHz, number of max samples)
+import os
+
 import torch
 import torchaudio
-
 import pandas as pd
+
 from torch.utils.data import Dataset
 from transformers import Wav2Vec2Processor
 
@@ -13,25 +15,25 @@ class ASVDataset(Dataset):
         self.processor = processor
         self.target_sr = target_sr
 
-    # Map path to right protocol for sample set
-    protocol_path = self.data_root / 'protocols/ASVspoof2019_LA_cm_protocols' / {
-        'train': 'ASVspoof2019.LA.cm.train.trn.txt',
-        'dev': 'ASVspoof2019.LA.cm.dev.trl.txt',
-        'eval': 'ASVspoof2019.LA.cm.eval.trl.txt',
-    }[subset]
+        # Map path to right protocol for sample set
+        protocol_path = os.path.join(self.data_root, 'protocols', 'ASVspoof2019_LA_cm_protocols', {
+            'train': 'ASVspoof2019.LA.cm.train.trn.txt',
+            'dev': 'ASVspoof2019.LA.cm.dev.trl.txt',
+            'eval': 'ASVspoof2019.LA.cm.eval.trl.txt',
+        }[subset])
 
-    self.df = pd.read_csv(protocol_path, sep=' ', header=None, names=['speaker_id', 'file_name', 'system_id', 'attack_type', 'label'])
+        self.df = pd.read_csv(protocol_path, sep=' ', header=None, names=['speaker_id', 'file_name', 'system_id', 'attack_type', 'label'])
 
-    if max_samples:
-        self.df = self._stratified_sample(max_samples)
+        if max_samples:
+            self.df = self._stratified_sample(max_samples)
 
-    self.audio_dir= self.data_root / 'raw' / f'ASVspoof2019_LA_{subset}' / 'flac'
+        self.audio_dir = os.path.join(self.data_root , 'raw', f'ASVspoof2019_LA_{subset}', 'flac')
 
     # Stratifying samples for even distribution of both labels
     def _stratified_sample(self, n_samples: int):
         df_bonafide = self.df[self.df['label'] == 'bonafide']
         df_spoof = self.df[self.df['label'] == 'spoof']
-        n_per_class = n_per_class // 2
+        n_per_class = n_samples // 2
 
         # Check for even distribution
         if len(df_bonafide) < n_samples and len(df_spoof) < n_samples:
@@ -39,7 +41,7 @@ class ASVDataset(Dataset):
 
         df_bonafide_sampled = df_bonafide.sample(n=n_samples, random_state=42)
         df_spoof_sampled = df_spoof.sample(n=n_samples, random_state=42)
-        return pd.concat([df_bonafide_sampled, df_spoof_sampled].sample(frac=1, random_state=42))
+        return pd.concat([df_bonafide_sampled, df_spoof_sampled]).sample(frac=1, random_state=42)
 
     def __len__(self):
         return len(self.df)
