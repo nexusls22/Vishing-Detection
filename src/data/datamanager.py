@@ -18,7 +18,7 @@ class DataManager:
         self.input_sample_size = input_sample_size
 
         sub_folder = f'ASVspoof2019_LA_{subset}'
-        self.audio_path = self.data_folder_path / sub_folder / 'flac'
+        self.audio_path = self.data_folder_path / 'raw' / sub_folder / 'flac'
 
         protocol_mapping = {
             'train': 'ASVspoof2019.LA.cm.train.trn.txt',
@@ -27,7 +27,7 @@ class DataManager:
         }
 
         protocol_file = protocol_mapping[subset]
-        protocol_path = self.data_folder_path / 'ASVspoof2019_LA_cm_protocols' / protocol_file
+        protocol_path = self.data_folder_path / 'protocols/ASVspoof2019_LA_cm_protocols' / protocol_file
         self.train_protocol_path = protocol_path
 
 

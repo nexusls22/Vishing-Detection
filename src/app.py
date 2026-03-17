@@ -1,24 +1,12 @@
 import os.path
 from itables import show
 
-from Backend.data.datamanager import DataManager, check_directory, check_data_quality
+from src.data.datamanager import DataManager, check_data_quality, check_directory
 
 data_folder_path = os.path.abspath(os.sep) + 'Users/Luis/Desktop/LA/LA/'
 input_sample_size = 300
 data_manager = DataManager(data_folder_path, 'train', input_sample_size)
 results = []
-
-## For next step: Proper classes for regression, learning etc
-#Backend/
-#├── data/
-#│   └── datamanager.py     # DataManager (Daten laden/validieren)
-#├── network/
-#│   ├── __init__.py
-#│   ├── models.py          # Neural Network Definition
-#│   ├── regression.py      # Sklearn-Models
-#│   ├── trainer.py         # Train logic with epochs
-#│   └── utils.py           # Helper functions
-#└── app.py                 # Streamlit UI (only Presentation)
 
 def main():
 
