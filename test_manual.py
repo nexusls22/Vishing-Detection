@@ -2,7 +2,6 @@
 from src.data.asvdataset import ASVDataset
 from transformers import Wav2Vec2Processor
 from src.data.collate import collate_fn
-import torch
 
 data_root = '/Users/luissander/Griffith-Local/SecondSemester/vishing-detection/data'
 processor = Wav2Vec2Processor.from_pretrained('facebook/wav2vec2-base')
@@ -12,7 +11,6 @@ item0 = dataset[0]
 item1 = dataset[1]
 print("Items loaded")
 
-# Kopiere die Tensoren, um Referenzprobleme zu vermeiden
 item0_copy = {
     'input_values': item0['input_values'].clone(),
     'label': item0['label'].clone()
