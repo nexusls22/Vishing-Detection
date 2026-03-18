@@ -1,0 +1,22 @@
+name: vd_cenv
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch=2.2.2
+  - torchaudio=2.2.2
+  - transformers
+  - soundfile
+  - librosa
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - jupyter
+  - ipykernel
+  - pip
+  - pip:
+    - itables
+    - numpy==1.26.4

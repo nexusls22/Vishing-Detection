@@ -1,24 +1,14 @@
-import os.path
-import platform
-import torch
-
-from transformers import Wav2Vec2Processor
+from torch.utils.data import DataLoader
 from src.data.asvdataset import ASVDataset
 from src.data.collate import collate_fn
-from torch.utils.data import DataLoader
+from transformers import Wav2Vec2Processor
 
-data_root = None
-
-if data_root is None:
-    system = platform.system()
-    data_root = (
-        os.path.join(os.path.abspath(os.sep), 'Users', 'Luis', 'Desktop','LA', 'LA')
-        if system == 'Windows'
-        else os.path.join('data')
-    )
-    print(f'Using {system} OS')
-
+data_root = '/Users/luissander/Griffith-Local/SecondSemester/vishing-detection/data'
 processor = Wav2Vec2Processor.from_pretrained('facebook/wav2vec2-base')
 
 dataset = ASVDataset(data_root, 'train', processor, max_samples=10)
-dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, collate_fn=collate_fn)
+dataloader = DataLoader(dataset, batch_size=2, collate_fn=collate_fn, num_workers=0)
+
+for i, batch in enumerate(dataloader):
+    print(f"Batch {i}: {batch['input_values'].shape}")
+    break

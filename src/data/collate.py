@@ -1,21 +1,19 @@
 import torch
-from torch.nn.utils.rnn import pad_sequence
-
 
 def collate_fn(batch):
-    input_values = [item['input_values'] for item in batch]
-    labels = [item['label'] for item in batch]
+    print("===== collate_fn gestartet =====")
+    print("Batch-Typ:", type(batch))
+    print("Batch-Länge:", len(batch))
 
-    input_values_padded = pad_sequence(input_values, batch_first=True)
+    if len(batch) > 0:
+        # Greife auf das erste Item zu
+        first = batch[0]
+        print("Item0 keys:", first.keys())
+        print("Item0 input_values shape:", first['input_values'].shape)
+        print("Item0 label:", first['label'])
 
-    attention_mask = torch.ones_like(input_values_padded)
-    for i, length in enumerate([len(seq) for seq in input_values_padded]):
-        attention_mask[i, length:] = 0
+    # Erstelle einen winzigen Tensor, um zu sehen, ob torch funktioniert
+    x = torch.tensor([1.0])
+    print("Tensor erstellt:", x)
 
-    labels = torch.stack(labels)
-
-    return {
-        'input_values': input_values_padded,
-        'attention_mask': attention_mask,
-        'labels': labels,
-    }
+    return {"dummy": x}
