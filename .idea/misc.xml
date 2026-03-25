@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.12 (Vishing_Detection)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Remote 3.11 Docker (sha256:7f26475bb6e6d4fe66c701302bcea53522e7fb63852586daf86b83497e10d774)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="vd_cenv" project-jdk-type="Python SDK" />
 </project>
