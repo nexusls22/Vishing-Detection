@@ -8,7 +8,6 @@ dependencies:
   - pytorch=2.2.2
   - torchaudio=2.2.2
   - transformers
-  - soundfile
   - librosa
   - pandas
   - scikit-learn
@@ -18,5 +17,6 @@ dependencies:
   - ipykernel
   - pip
   - pip:
-    - itables
-    - numpy==1.26.4
+      - soundfile
+      - itables
+      - numpy==1.26.4

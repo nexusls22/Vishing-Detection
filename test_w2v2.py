@@ -1,14 +1,30 @@
-from torch.utils.data import DataLoader
-from src.data.asvdataset import ASVDataset
-from src.data.collate import collate_fn
+import os
 from transformers import Wav2Vec2Processor
+from src.data.asvdataset import ASVDataset
 
-data_root = '/Users/luissander/Griffith-Local/SecondSemester/vishing-detection/data'
+data_root = 'C:/Users/Luis/Desktop/LA/LA'
 processor = Wav2Vec2Processor.from_pretrained('facebook/wav2vec2-base')
 
-dataset = ASVDataset(data_root, 'train', processor, max_samples=10)
-dataloader = DataLoader(dataset, batch_size=2, collate_fn=collate_fn, num_workers=0)
+# Create train and dev datasets
+train_ds = ASVDataset(data_root, 'train', processor)
+dev_ds = ASVDataset(data_root, 'dev', processor)
 
-for i, batch in enumerate(dataloader):
-    print(f"Batch {i}: {batch['input_values'].shape}")
-    break
+print("\n" + "="*60)
+print("TRAIN SET")
+print("="*60)
+print("Label counts:\n", train_ds.df['label'].value_counts())
+print("First 5 rows:\n", train_ds.df.head())
+print("Sample first 10 labels from __getitem__:")
+for i in range(10):
+    sample = train_ds[i]
+    print(f"  Index {i}: label = {sample['label'].item()}, file = {train_ds.df.iloc[i]['file_name']}")
+
+print("\n" + "="*60)
+print("DEV SET")
+print("="*60)
+print("Label counts:\n", dev_ds.df['label'].value_counts())
+print("First 5 rows:\n", dev_ds.df.head())
+print("Sample first 10 labels from __getitem__:")
+for i in range(10):
+    sample = dev_ds[i]
+    print(f"  Index {i}: label = {sample['label'].item()}, file = {dev_ds.df.iloc[i]['file_name']}")
