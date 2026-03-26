@@ -30,8 +30,9 @@ for subset in SUBSETS:
 
     print(f"Transcribing {subset} set ({len(file_names)} files)...")
 
-    for fname in tqdm(file_names): # Iterables for entries in file_names (Visualization of transcription progress)
-        audio_path = os.path.join(audio_dir, f'{fname}.flac')
+    for filename in tqdm(file_names): # Iterables for entries in file_names (Visualization of transcription progress)
+        audio_path = os.path.join(audio_dir, f'{filename}.flac')
+
         try:
             # Load audio
             audio, sr = sf.read(audio_path, dtype='float32')
@@ -45,12 +46,13 @@ for subset in SUBSETS:
             # Transcribe
             result = model.transcribe(audio, language='en')
             transcript = result['text'].strip()
+
         except Exception as e:
-            print(f"Error with {fname}: {e}")
+            print(f"Error with {filename}: {e}")
             transcript = ""
 
         all_transcripts.append({
-            'file_name': fname,
+            'file_name': filename,
             'subset': subset,
             'transcript': transcript
         })

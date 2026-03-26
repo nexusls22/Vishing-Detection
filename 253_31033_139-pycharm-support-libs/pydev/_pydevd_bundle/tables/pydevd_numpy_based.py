@@ -390,7 +390,7 @@ def __define_format_function(format):
 def __is_pandas_can_be_used_for_array(array):
     is_cpu_stored = True
     try:
-        device = str(array.device).lower()
+        device = str(array.DEVICE).lower()
         # check mac
         if "cpu" in device:
             is_cpu_stored = True

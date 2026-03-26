@@ -1,6 +1,6 @@
 import os
 from transformers import Wav2Vec2Processor
-from src.data.asvdataset import ASVDataset
+from src.data.ASVDataset import ASVDataset
 
 data_root = 'C:/Users/Luis/Desktop/LA/LA'
 processor = Wav2Vec2Processor.from_pretrained('facebook/wav2vec2-base')
