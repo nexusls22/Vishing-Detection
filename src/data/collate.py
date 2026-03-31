@@ -1,12 +1,17 @@
 import torch
 
-# Padding all samples to the same length, building attention mask to differentiate real data from padding
+"""
+collate_fn function to pad all samples to the same length, building attention mask to differentiate real data from padding
+Parameters: 
+    batch: list of samples
+Returns: 
+    collated batch
+"""
 def collate_fn(batch):
-    print("===== collate_fn started =====")
-    print("Batch-Length:", len(batch))
 
     input_values = [item['input_values'] for item in batch]
-    transcripts = [item['transcript'] for item in batch]
+    transcript_ids = torch.stack([item['transcript_ids'] for item in batch])
+    transcript_mask = torch.stack([item['transcript_mask'] for item in batch])
     raw_audio = [item['raw_audio_for_whisper'] for item in batch]
     labels = [item['label'] for item in batch]
     max_len = max(len(in_value) for in_value in input_values)
@@ -23,11 +28,11 @@ def collate_fn(batch):
 
     # Stack of all labels in the batch - target (correct class for each sample) for the loss calculation - difference between the predictions and true labels
     labels_tensor = torch.stack(labels)
-    print(f"Tensor labels: {labels_tensor}")
 
     return {
         'input_values': input_values_padded,
-        'transcript': transcripts,
+        'transcript_ids': transcript_ids,
+        'transcript_mask': transcript_mask,
         'attention_mask': attention_mask,
         'raw_audio_for_whisper': raw_audio,
         'labels': labels_tensor

@@ -8,14 +8,29 @@ import pandas as pd
 from torch.utils.data import Dataset
 from transformers import Wav2Vec2Processor
 
-# Custom dataset for ASVspoof data for reading the protocol into a DataFrame, performs stratified sampling and returns a dict of processed data
+"""
+Class ASVDataset(Dataset): Dataset for ASVspoof2019 LA dataset
+Custom dataset for ASVspoof data for reading the protocol into a DataFrame, performs stratified sampling and returns a dict of processed data
+Parameters:
+    data_root: str = 'C:/Users/Luis/Desktop/LA/LA'
+    subset: str = 'train'
+    processor: Wav2Vec2Processor
+    target_sr: int = 16000
+    samples: int = None
+Returns:
+    Dataset
+"""
 class ASVDataset(Dataset):
 
-    def __init__(self, data_root: str, subset: str, processor: Wav2Vec2Processor, target_sr: int = 16000, samples: int = None):
+    """
+    __init__ method: Initializes the ASVDataset object.
+    """
+    def __init__(self, data_root: str, subset: str, processor: Wav2Vec2Processor, text_tokenizer, target_sr: int = 16000, samples: int = None,):
 
         self.data_root = data_root
         self.subset = subset
         self.processor = processor
+        self.text_tokenizer = text_tokenizer
         self.target_sr = target_sr
 
         # Map path to the right protocol for the data set
@@ -27,20 +42,34 @@ class ASVDataset(Dataset):
 
         if os.path.exists(protocol_path):
             self.df = pd.read_csv(protocol_path, sep=' ', header=None, names=['speaker_id', 'file_name', 'system_id', 'attack_type', 'label'])
-            print(f"Label distribution for {self.subset}:")
-            print(self.df['label'].value_counts())
-            print(self.df['label'].unique())
         else:
             print(f'Warning: File not found at: {protocol_path}. Protocol not found.')
 
-        transcript_path = r'C:\Users\Luis\Griffith\Vishing_Project\Vishing_Detection\models\data\training\transcripts.csv'
+        transcript_path = r'C:\Users\Luis\Griffith\Vishing_Project\Vishing_Detection\src\models\data\training\transcripts.csv'
 
         if os.path.exists(transcript_path):
             transcript_df = pd.read_csv(transcript_path)
             self.df = self.df.merge(transcript_df, how='left', on='file_name')
+            self.df['transcript'] = self.df['transcript'].fillna('')
         else:
             print(f'Warning: File not found at: {transcript_path}. Transcripts are empty.')
             self.df['transcript'] = ''
+
+        # Pre‑tokenize all transcripts
+        self.transcript_ids = []
+        self.transcript_masks = []
+
+        for _, row in self.df.iterrows():
+            transcript = row.get('transcript', '')
+            encoder = self.text_tokenizer(
+                transcript,
+                truncation=True,
+                max_length=128,
+                padding='max_length',  # fixed length for easy stacking
+                return_tensors='pt'
+                )
+            self.transcript_ids.append(encoder['input_ids'].squeeze(0))
+            self.transcript_masks.append(encoder['attention_mask'].squeeze(0))
 
         if samples:
             self.df = self._stratified_sample(samples)
@@ -52,8 +81,18 @@ class ASVDataset(Dataset):
         else:
             print(f'Warning: File not found at: {self.data_path}. Data directory is empty.')
 
+        self.transcript_ids = []
+        self.transcript_attention = []
 
-    # Stratifying samples for even distribution of both labels
+        for _, row in self.df.iterrows():
+            transcript = row.get('transcript', '')
+            encoder = self.text_tokenizer(transcript, truncation = True, max_length = 128, padding = 'max_length', return_tensors = 'pt')
+            self.transcript_ids.append(encoder['input_ids'].squeeze(0))
+            self.transcript_attention.append(encoder['attention_mask'].squeeze(0))
+
+    """
+    _stratified_sample: Samples the dataset to ensure an equal distribution of both labels.
+    """
     def _stratified_sample(self, n_samples: int):
 
         df_bonafide = self.df[self.df['label'] == 'bonafide']
@@ -68,9 +107,14 @@ class ASVDataset(Dataset):
         df_spoof_sampled = df_spoof.sample(n=n_per_class, random_state=42)
         return pd.concat([df_bonafide_sampled, df_spoof_sampled]).sample(frac=1, random_state=42) # frac = Fraction of item from axis to return - makes sure to shuffle the rows
 
+    """
+    __len__: Returns the length of the dataset.
+    """
     def __len__(self): return len(self.df)
 
-    # Get item from DataFrame
+    """
+    __getitem__: Returns an item from the dataset.
+    """
     def __getitem__(self, index):
 
         row = self.df.iloc[index] # Indexer - iloc[] integer position (from 0 to length-1)
@@ -84,8 +128,6 @@ class ASVDataset(Dataset):
         # Resample if needed
         if sr != self.target_sr:
             y = librosa.resample(y, orig_sr=sr, target_sr=self.target_sr)
-        # else:
-            # print(f'Target sampling rate is already satisfied at rate: {sr}.')
 
         # Ensure mono audio (only one channel)
         if y.ndim > 1:
@@ -98,12 +140,13 @@ class ASVDataset(Dataset):
         inputs = self.processor(y, sampling_rate=self.target_sr, return_tensors='pt') # Normalization, Feature extraction (CNN), Conversion to PyTorch ('pt') tensors
         input_values = inputs.input_values.squeeze(0) # Squeezing the batch dim added by hugging face processor, making it required 1D tensor of sequence_length
 
-        # For Whisper: Raw audio (already resampled, float32)
+        # For Whisper: Raw audio (resampled, float32)
         raw_audio_for_whisper = y.copy() # Using a copy of original y for potential later changes to the original.
 
         return {
             'input_values': input_values,
-            'transcript': transcript,
+            'transcript_ids': self.transcript_ids[index],
+            'transcript_mask': self.transcript_masks[index],
             'raw_audio_for_whisper': raw_audio_for_whisper,
             'label': torch.tensor(label, dtype=torch.long) # Dtype torch.long as expected by CrossEntropyLoss - Predicted probabilities compared to true labels
         }

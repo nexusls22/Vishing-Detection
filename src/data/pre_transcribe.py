@@ -16,7 +16,7 @@ model = whisper.load_model("small")
 all_transcripts = []
 
 for subset in SUBSETS:
-    # Path to audio files
+    # Path to audio files<
     audio_dir = os.path.join(DATA_ROOT, f'ASVspoof2019_LA_{subset}', 'flac')
     # Path to protocol files, respectively for subsets
     if subset == 'train':
