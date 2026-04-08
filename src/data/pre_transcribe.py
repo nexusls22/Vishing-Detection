@@ -1,13 +1,23 @@
 import os
+import torch
 import pandas as pd
 import whisper
 import soundfile as sf
-from tqdm import tqdm
 import librosa
+import torch_directml
+from tqdm import tqdm
+
 
 # Paths
 DATA_ROOT = r"C:\Users\Luis\Desktop\LA\LA"
 SUBSETS = ['train', 'dev']
+
+if torch.cuda.is_available():
+    DEVICE = torch.device('cuda')
+elif torch_directml.is_available():
+    DEVICE = torch_directml.device()
+else:
+    DEVICE = torch.device('cpu')
 
 # Load Whisper model
 model = whisper.load_model("small")

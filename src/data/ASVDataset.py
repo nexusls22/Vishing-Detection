@@ -99,6 +99,11 @@ class ASVDataset(Dataset):
         else:
             raise FileNotFoundError(f'Protocol file not found at: {protocol_path}')
 
+        #Add attack type labels to dataset
+        self.attack_types = sorted(self.df[self.df['label'] == 'spoof']['attack_type'].unique())
+        self.attack_to_idx = {at: i for i, at in enumerate(self.attack_types)}
+        self.ignore_attack_idx = -1 # Add a special 'ignore' index for bonafide and unkown attacks
+
         transcript_path = r'C:\Users\Luis\Griffith\Vishing_Project\Vishing_Detection\src\models\data\training\transcripts.csv'
 
         if os.path.exists(transcript_path):
@@ -177,6 +182,12 @@ class ASVDataset(Dataset):
         # transcript = row.get('transcript', '')
         label = 1 if row['label'] == 'spoof' else 0
 
+        if row['label'] == 'spoof':
+            attack = row['attack_type']
+            attack_idx = self.attack_to_idx.get(attack, self.ignore_attack_idx)
+        else:
+            attack_idx = self.ignore_attack_idx # bonfide = ignore
+
         # Load the audio
         audio_path = os.path.join(self.data_path, f'{file_name}.flac')
         y, sr = sf.read(audio_path)  # y is float64, shape (T,)
@@ -207,5 +218,6 @@ class ASVDataset(Dataset):
             'attention_mask': attention_mask,
             'transcript_ids': self.transcript_ids[index],
             'transcript_mask': self.transcript_masks[index],
-            'label': torch.tensor(label, dtype=torch.long) # Dtype torch.long as expected by CrossEntropyLoss - Predicted probabilities compared to true labels
+            'label': torch.tensor(label, dtype=torch.long), # Dtype torch.long as expected by CrossEntropyLoss - Predicted probabilities compared to true labels
+            'attack_idx': torch.tensor(attack_idx, dtype=torch.long)
         }
