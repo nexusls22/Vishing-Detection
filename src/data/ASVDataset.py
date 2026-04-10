@@ -55,13 +55,7 @@ def augment_audio(y, sr):
 class ASVDataset(Dataset):
     """
     Class ASVDataset(Dataset): Dataset for ASVspoof2019 LA dataset
-    Custom dataset for ASVspoof data for reading the protocol into a DataFrame, performs stratified sampling and returns a dict of processed data
-    Parameters:
-        data_root: str = 'C:/Users/Luis/Desktop/LA/LA'
-        subset: str = 'train'
-        processor: Wav2Vec2Processor
-        target_sr: int = 16000
-        samples: int = None
+    Custom dataset for ASVspoof data for reading the protocol into a DataFrame, pre-tokenizes, performs stratified sampling and returns a dict of processed data
     Returns:
         Dataset
     """
@@ -99,12 +93,13 @@ class ASVDataset(Dataset):
         else:
             raise FileNotFoundError(f'Protocol file not found at: {protocol_path}')
 
-        #Add attack type labels to dataset
+        # Attack type labels for dataset
         self.attack_types = sorted(self.df[self.df['label'] == 'spoof']['attack_type'].unique())
         self.attack_to_idx = {at: i for i, at in enumerate(self.attack_types)}
         self.ignore_attack_idx = -1 # Add a special 'ignore' index for bonafide and unkown attacks
 
-        transcript_path = r'C:\Users\Luis\Griffith\Vishing_Project\Vishing_Detection\src\models\data\training\transcripts.csv'
+        #transcript_path = r'C:\Users\Luis\Griffith\Vishing_Project\Vishing_Detection\src\models\data\training\transcripts.csv'
+        transcript_path = r'C:\tmp\vishing_detection\src\models\data\training\transcripts.csv'
 
         if os.path.exists(transcript_path):
             transcript_df = pd.read_csv(transcript_path)
@@ -113,6 +108,10 @@ class ASVDataset(Dataset):
         else:
             print(f'Warning: File not found at: {transcript_path}. Transcripts are empty.')
             self.df['transcript'] = ''
+
+        # Optional: Stratified sampling to balance the classes
+        if samples:
+            self.df = self._stratified_sample(samples)
 
         # Pre‑tokenize all transcripts once (for efficiency)
         self.transcript_ids = []
@@ -129,10 +128,6 @@ class ASVDataset(Dataset):
                 )
             self.transcript_ids.append(encoder['input_ids'].squeeze(0))
             self.transcript_masks.append(encoder['attention_mask'].squeeze(0))
-
-        # Optional: Stratified sampling to balance the clases
-        if samples:
-            self.df = self._stratified_sample(samples)
 
         # Path to the audio files
         self.data_path = os.path.join(self.data_root, f'ASVspoof2019_LA_{subset}', 'flac')
@@ -212,7 +207,7 @@ class ASVDataset(Dataset):
         input_values = inputs.input_values.squeeze(0) # # (seq_len,)
         attention_mask = inputs.attention_mask.squeeze(0) # (seq_len,)
 
-        # Return dict of processed data - Transcripts are included but not used by the only audio model
+        # Return dict of processed data
         return {
             'input_values': input_values,
             'attention_mask': attention_mask,

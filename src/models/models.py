@@ -18,7 +18,7 @@ class AudioEncoder(nn.Module): # Base class for nn (automatic param registration
     def __init__(self, model_name='facebook/wav2vec2-base', freeze = False): # True = freezes all W2V2 params - Not updated during training / False unfreezes the params of the model, will be fine-tuned to the task with optimizer.step()
 
         super().__init__() # initializes base nn.Module to set up internal structures
-        self.wav2vec2 = Wav2Vec2Model.from_pretrained(model_name)
+        self.wav2vec2 = Wav2Vec2Model.from_pretrained(model_name, use_safetensors=True)
         if freeze:
             for param in self.wav2vec2.parameters(): # Iteration over all params (weights and biases) of the model
                 param.requires_grad = False # Params will not update if the model is frozen
@@ -77,7 +77,7 @@ class MultimodalVishingDetector(nn.Module):
 
         super().__init__()
         self.acoustic_encoder = AudioEncoder(freeze = False)
-        self.semantic_encoder = TextEncoder(freeze = True)
+        self.semantic_encoder = TextEncoder(freeze = False)
         self.fusion = nn.Sequential( # Small feed-forward network - Takes concatenated feats as input outputs logits for the two classes
             nn.Linear(audio_dim + text_dim, fusion_dim),
             nn.ReLU(), # Introduces non-linearity (a straight line can't represent input, output relation)

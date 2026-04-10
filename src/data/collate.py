@@ -13,6 +13,8 @@ def collate_fn(batch):
     transcript_ids = torch.stack([item['transcript_ids'] for item in batch])
     transcript_mask = torch.stack([item['transcript_mask'] for item in batch])
     labels = [item['label'] for item in batch]
+
+
     max_len = max(len(in_value) for in_value in input_values)
     batch_size = len(input_values)
     input_values_padded = torch.zeros(batch_size, max_len, dtype=input_values[0].dtype)
@@ -27,13 +29,13 @@ def collate_fn(batch):
 
     # Stack of all labels in the batch - target (correct class for each sample) for the loss calculation - difference between the predictions and true labels
     labels_tensor = torch.stack(labels)
-    attack_idxs = torch.stack([item['attack_type']for item in batch])
-
+    attack_idxs = torch.stack([item['attack_idx'] for item in batch])
+    
     return {
         'input_values': input_values_padded,
         'transcript_ids': transcript_ids,
         'transcript_mask': transcript_mask,
         'attention_mask': attention_mask,
         'labels': labels_tensor,
-        'attack_idxs': attack_idxs
+        'attack_idx': attack_idxs
     }
