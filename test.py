@@ -1,11 +1,5 @@
-import pandas as pd
+import os
+import multiprocessing
 
-file_path = r'C:\tmp\vishing_detection\src\models\data\training\transcripts.csv'
-
-try:
-    df = pd.read_csv(file_path)
-    print(f"Success! Loaded {len(df)} rows.")
-except PermissionError:
-    print("Permission denied - file likely locked by another process.")
-except FileNotFoundError:
-    print("File not found - check the exact path.")
+print(f"Logische CPU-Kerne (os): {os.cpu_count()}")
+print(f"Logische CPU-Kerne (multiprocessing): {multiprocessing.cpu_count()}")

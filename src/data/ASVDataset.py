@@ -99,7 +99,7 @@ class ASVDataset(Dataset):
         self.ignore_attack_idx = -1 # Add a special 'ignore' index for bonafide and unkown attacks
 
         #transcript_path = r'C:\Users\Luis\Griffith\Vishing_Project\Vishing_Detection\src\models\data\training\transcripts.csv'
-        transcript_path = r'C:\tmp\vishing_detection\src\models\data\training\transcripts.csv'
+        transcript_path = r'C:\Users\Luis\Griffith\Vishing_Project\Vishing_Detection\src\models\data\training\transcripts.csv'
 
         if os.path.exists(transcript_path):
             transcript_df = pd.read_csv(transcript_path)
