@@ -3,7 +3,6 @@ import torch.nn as nn
 from transformers import Wav2Vec2Model, DistilBertModel, DistilBertTokenizer
 
 
-
 class AudioEncoder(nn.Module): # Base class for nn (automatic param registration, computation of gradients for params etc.)
     """
     Class AudioEncoder
@@ -73,7 +72,7 @@ class MultimodalVishingDetector(nn.Module):
         logits: torch.Tensor = Tensor of shape (batch_size, 2)
     """
 
-    def __init__(self, audio_dim = 768, text_dim = 768, fusion_dim = 512, num_attack_classes = 19): # audio_dim & text_dim = Feature dim output of the respective encoders / fusion_dim size of the hidden layer inside the fusion network (maybe tuned on hp fine-tuning)
+    def __init__(self, audio_dim = 768, text_dim = 768, fusion_dim = 512, embed_dim = 256, num_attack_classes = 19): # audio_dim & text_dim = Feature dim output of the respective encoders / fusion_dim size of the hidden layer inside the fusion network (maybe tuned on hp fine-tuning)
 
         super().__init__()
         self.acoustic_encoder = AudioEncoder(freeze = False)
@@ -82,20 +81,31 @@ class MultimodalVishingDetector(nn.Module):
             nn.Linear(audio_dim + text_dim, fusion_dim),
             nn.ReLU(), # Introduces non-linearity (a straight line can't represent input, output relation)
             nn.Dropout(0.3), # Helps prevent overfitting and randomly zeroing 30% of activations
-            nn.Linear(fusion_dim, 2)   # binary classification - Projects the hidden representation to both classes (two logits)
+            nn.Linear(fusion_dim, embed_dim)   # binary classification - Projects the hidden representation to both classes (two logits)
         )
+
+        # Binary classification head (takes the embedding as input)
+        self.binary_head = nn.Linear(embed_dim, 2)
+
+        # Auxiliary classifier (attack type) can still use combined features
         self.aux_classifier = nn.Linear(audio_dim + text_dim, num_attack_classes) # Auxiliary head - separate linear layer on the combined features
 
 
     def forward(self, input_values, audio_attention_mask, transcript_ids, transcript_mask, return_embeddings = False): # transcript_ids, transcripts_mask): # Raw audio [batch_size, seq_len], binary mask for real vs. padded positions, list of stings
         acoustic_feat = self.acoustic_encoder(input_values, audio_attention_mask) # AudioEncoder output, shape [batch_size, audio_dim]
         semantic_feat = self.semantic_encoder(transcript_ids, transcript_mask) # TextEncoder output, shape [batch_size, text_dim]
-
         combined = torch.cat([acoustic_feat, semantic_feat], dim = 1) # Concatenation of the two feat vectors along feat_dim[dim=1], shape [batch_size, audio_dim + text_dim]
-        binary_logits = self.fusion(combined) # Raw scores, shape [batch_size, 2] - Passed to the CrossEntropyLoss func (batch, 2)
-        aux_logits = self.aux_classifier(combined) # (batch, num_attack_classes)
+
+        # Produces embedding for margin loss
+        embedding = self.fusion(combined) # Shape [batch_size, embed_dim]
+
+        # Produces logits for binary classification (for evaluation and early stopping)
+        binary_logits = self.binary_head(embedding) # Raw scores, shape [batch_size, 2] - Passed to the CrossEntropyLoss func (batch, 2)
+
+        # Audio logits
+        aux_logits = self.aux_classifier(combined) # Shape [batch_size, num_attack_classes]
 
         if return_embeddings:
-            return binary_logits, aux_logits, acoustic_feat, semantic_feat
+            return binary_logits, aux_logits, embedding, acoustic_feat, semantic_feat
         else:
             return binary_logits, aux_logits
