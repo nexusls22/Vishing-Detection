@@ -1,13 +1,9 @@
 name: vd_cenv
 channels:
-  - pytorch
   - conda-forge
   - defaults
 dependencies:
   - python=3.10
-  - pytorch=2.2.2
-  - torchaudio=2.2.2
-  - transformers
   - librosa
   - pandas
   - scikit-learn
@@ -15,8 +11,16 @@ dependencies:
   - seaborn
   - jupyter
   - ipykernel
+  - numpy=1.26.4
   - pip
   - pip:
+      - transformers
       - soundfile
-      - itables
-      - numpy==1.26.4
+      - openai-whisper
+      - gradio
+      - python-dotenv
+      - torch --index-url https://download.pytorch.org/whl/nightly/cu128
+      - torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+
+  - torch
+  - torchaudio

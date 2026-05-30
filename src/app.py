@@ -1,6 +1,13 @@
 """
 app.py — Vishing Detection Gradio Interface
-Multimodal inference: Wav2Vec2 (audio) + DistilBERT (transcript) via Whisper ASR
+Multimodal inference pipeline:
+  1. Uploaded audio is preprocessed (resample → pad/trim → normalise)
+  2. Whisper transcribes the audio to text
+  3. The MultimodalVishingDetector fuses both modalities and produces a 256-dim embedding
+  4. Cosine similarity to the pre-computed spoof prototype determines the verdict
+
+Run from the project root:
+    python src/app.py
 """
 
 import os
@@ -12,102 +19,127 @@ import whisper
 import gradio as gr
 from transformers import AutoTokenizer
 
-# ── Path fix so `src` imports work when launched from project root ────────────
+# Allows `from src.models.models import ...` when launched from the project root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.models.models import MultimodalVishingDetector
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MODEL_PATH = os.path.join(os.path.dirname(__file__), 'models', 'best_model.pth')
-TARGET_SR = 16_000
-TARGET_LEN = 48_000
+MODEL_PATH   = os.path.join(os.path.dirname(__file__), 'models', 'best_model.pth')
+TARGET_SR    = 16_000
+TARGET_LEN   = 48_000   # 3 seconds at 16 kHz — matches training fixed length
 MAX_TEXT_LEN = 128
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+DEVICE       = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Attack types present in ASVspoof2019 LA train set (sorted → matches attack_to_idx)
+# Maps aux_classifier output index → ASVspoof attack label (sorted A01–A19)
 IDX_TO_ATTACK = {i: f'A{i+1:02d}' for i in range(19)}
 
-# ── Load models once at startup ───────────────────────────────────────────────
-print(f"[app] Device: {DEVICE}")
+# ── Model handles (populated by load_models() inside the __main__ guard) ───────
+# These must stay module-level globals so the inference helpers below can see
+# them, but they are only POPULATED in the main process. On Windows, transformers
+# may spawn a child process (e.g. for safetensors conversion) that re-imports this
+# module as "__mp_main__"; guarding the heavy loading prevents that child from
+# re-running everything and crashing.
+detector = None
+PROTO_BONAFIDE = PROTO_SPOOF = None
+THRESHOLD = 0.6297
+whisper_model = None
+tokenizer = None
 
-print("[app] Loading MultimodalVishingDetector …")
-detector = MultimodalVishingDetector(embed_dim=256).to(DEVICE)
-state = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=True)
-result = detector.load_state_dict(state, strict=False)
-if result.missing_keys:
-    print(f"  [warn] missing keys: {result.missing_keys[:5]}")
-if result.unexpected_keys:
-    print(f"  [warn] unexpected keys: {result.unexpected_keys[:5]}")
-detector.eval()
-print("[app] Detector loaded.")
 
-PROTO_PATH = os.path.join(os.path.dirname(__file__), 'models', 'prototypes.pt')
-if os.path.exists(PROTO_PATH):
-    _protos = torch.load(PROTO_PATH, map_location=DEVICE, weights_only=True)
-    PROTO_BONAFIDE = _protos['bonafide'].to(DEVICE)
-    PROTO_SPOOF = _protos['spoof'].to(DEVICE)
-    THRESHOLD = float(_protos.get('threshold', 0.6297))
-    print(f"[app] Prototypes loaded — threshold: {THRESHOLD}")
-else:
-    PROTO_BONAFIDE = PROTO_SPOOF = None
-    THRESHOLD = 0.6297
-    print("[app] WARNING: prototypes.pt not found — run build_prototypes.py first.")
+def load_models():
+    """Loads all models once at startup. Called only from the __main__ guard."""
+    global detector, PROTO_BONAFIDE, PROTO_SPOOF, THRESHOLD, whisper_model, tokenizer
 
-print("[app] Loading Whisper (small) …")
-whisper_model = whisper.load_model("small", device="cpu")
-print("[app] Whisper loaded.")
+    print(f"[app] Device: {DEVICE}")
 
-print("[app] Loading DistilBERT tokenizer …")
-tokenizer = AutoTokenizer.from_pretrained('distilbert-base-uncased')
-print("[app] Tokenizer loaded.")
+    print("[app] Loading MultimodalVishingDetector …")
+    detector = MultimodalVishingDetector(embed_dim=256).to(DEVICE)
+    state    = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=True)
+    result   = detector.load_state_dict(state, strict=False)
+    if result.missing_keys:
+        print(f"  [warn] missing keys: {result.missing_keys[:5]}")
+    if result.unexpected_keys:
+        print(f"  [warn] unexpected keys: {result.unexpected_keys[:5]}")
+    detector.eval()
+    print("[app] Detector loaded.")
+
+    PROTO_PATH = os.path.join(os.path.dirname(__file__), 'models', 'prototypes.pt')
+    if os.path.exists(PROTO_PATH):
+        _protos        = torch.load(PROTO_PATH, map_location=DEVICE, weights_only=True)
+        PROTO_BONAFIDE = _protos['bonafide'].to(DEVICE)
+        PROTO_SPOOF    = _protos['spoof'].to(DEVICE)
+        THRESHOLD      = float(_protos.get('threshold', 0.6297))
+        print(f"[app] Prototypes loaded — threshold: {THRESHOLD}")
+    else:
+        print("[app] WARNING: prototypes.pt not found — run build_prototypes.py first.")
+
+    print("[app] Loading Whisper (small) …")
+    whisper_model = whisper.load_model("small", device=DEVICE)
+    print("[app] Whisper loaded.")
+
+    print("[app] Loading DistilBERT tokenizer …")
+    tokenizer = AutoTokenizer.from_pretrained('distilbert-base-uncased')
+    print("[app] Tokenizer loaded.")
 
 
 # ── Inference helpers ─────────────────────────────────────────────────────────
 
 def preprocess_audio(path: str) -> tuple[torch.Tensor, torch.Tensor]:
+    """Loads and normalises audio to match the training preprocessing in collate_fn."""
     y, _ = librosa.load(path, sr=TARGET_SR, mono=True, dtype=np.float32)
     y = y[:TARGET_LEN] if len(y) >= TARGET_LEN else np.pad(y, (0, TARGET_LEN - len(y)))
     y = (y - y.mean()) / (y.std() + 1e-9)
-    input_values = torch.from_numpy(y).unsqueeze(0).to(DEVICE)
+    input_values   = torch.from_numpy(y).unsqueeze(0).to(DEVICE)
     attention_mask = torch.ones_like(input_values)
     return input_values, attention_mask
 
 
 def transcribe(path: str) -> str:
+    """Transcribes an audio file using Whisper. Loads via librosa to bypass ffmpeg."""
     audio_np, _ = librosa.load(path, sr=16000, mono=True, dtype=np.float32)
-    result = whisper_model.transcribe(audio_np, language='en', fp16=False)
+    result = whisper_model.transcribe(audio_np, language='en', fp16=DEVICE.type == 'cuda')
     return result['text'].strip()
 
 
 def tokenize(transcript: str) -> tuple[torch.Tensor, torch.Tensor]:
-    enc = tokenizer(transcript, truncation=True, max_length=MAX_TEXT_LEN, padding='max_length', return_tensors='pt')
+    """Tokenises a transcript string for the DistilBERT text encoder."""
+    enc = tokenizer(
+        transcript, truncation=True, max_length=MAX_TEXT_LEN,
+        padding='max_length', return_tensors='pt'
+    )
     return enc['input_ids'].to(DEVICE), enc['attention_mask'].to(DEVICE)
 
 
 def run_inference(audio_path: str) -> dict:
-    input_values, audio_mask = preprocess_audio(audio_path)
-    transcript = transcribe(audio_path)
+    """
+    End-to-end inference for a single audio file.
+
+    Scoring uses cosine similarity to the spoof prototype vector — identical
+    to the method that produced the 2.79% EER in reconstruct_eer.py.
+    """
+    input_values, audio_mask  = preprocess_audio(audio_path)
+    transcript                = transcribe(audio_path)
     transcript_ids, text_mask = tokenize(transcript)
 
     with torch.no_grad():
         with torch.amp.autocast(device_type=DEVICE.type, enabled=DEVICE.type == 'cuda'):
             _, aux_logits, embedding, _, _ = detector(
-                input_values,
-                audio_mask,
-                transcript_ids,
-                text_mask,return_embeddings=True)
+                input_values, audio_mask, transcript_ids, text_mask,
+                return_embeddings=True
+            )
 
-        emb_norm = torch.nn.functional.normalize(embedding.float(), dim=1)
+        emb_norm  = torch.nn.functional.normalize(embedding.float(), dim=1)
         spoof_cos = torch.nn.functional.cosine_similarity(emb_norm, PROTO_SPOOF).item()
-        is_spoof = spoof_cos > THRESHOLD
+        is_spoof  = spoof_cos > THRESHOLD
 
-        attack_idx = aux_logits.argmax(dim=-1).item()
+        attack_idx  = aux_logits.argmax(dim=-1).item()
         attack_type = IDX_TO_ATTACK.get(attack_idx, f'Unknown ({attack_idx})')
 
     return {
-        'spoof_cos': spoof_cos,
-        'is_spoof': is_spoof,
+        'spoof_cos':   spoof_cos,
+        'is_spoof':    is_spoof,
         'attack_type': attack_type,
-        'transcript': transcript,
+        'transcript':  transcript,
     }
 
 
@@ -144,15 +176,15 @@ def predict(audio):
     return verdict, transcript_md
 
 
-# ── Gradio Blocks UI ──────────────────────────────────────────────────────────
+# ── Gradio UI ─────────────────────────────────────────────────────────────────
 
-DESCRIPTION = """
-Upload a call audio file. The system transcribes it with **Whisper** and
-feeds both the audio and the transcript into a multimodal **Wav2Vec2 + DistilBERT**
-classifier trained on the ASVspoof 2019 LA dataset.
-"""
+DESCRIPTION = (
+    "Upload a call audio file. The system transcribes it with Whisper and "
+    "feeds both the audio and the transcript into a multimodal Wav2Vec2 + DistilBERT "
+    "classifier trained on the ASVspoof 2019 LA dataset."
+)
 
-with gr.Blocks(title="Vishing Detector") as demo:
+with gr.Blocks(title="Vishing Detector", css=".output-box { min-height: 80px; }") as demo:
 
     gr.Markdown("# Vishing Detection System")
     gr.Markdown(DESCRIPTION)
@@ -167,21 +199,28 @@ with gr.Blocks(title="Vishing Detector") as demo:
             run_btn = gr.Button("Analyse", variant="primary")
 
         with gr.Column(scale=1):
-            verdict_out = gr.Markdown(label="Verdict")
-            transcript_out = gr.Markdown(label="Transcript")
+            verdict_out    = gr.Markdown(
+                label="Verdict",
+                value="*Upload a file and click Analyse.*",
+                elem_classes="output-box",
+            )
+            transcript_out = gr.Markdown(
+                label="Transcript",
+                value="",
+                elem_classes="output-box",
+            )
 
     run_btn.click(
         fn=predict,
         inputs=[audio_input],
         outputs=[verdict_out, transcript_out],
+        show_progress="full",
     )
 
-    gr.Markdown(
-        f"---\n*Running on **{DEVICE.type.upper()}*** "
-    )
 
 # ── Launch ────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
+    load_models()
     demo.queue(max_size=4)
     demo.launch(
         server_name="127.0.0.1",
