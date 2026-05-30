@@ -1,13 +1,18 @@
 import os
+from dotenv import load_dotenv
 import librosa
 import numpy as np
 import soundfile as sf
 import torch
 import pandas as pd
+import torch.functional as F
+import torchaudio.functional as taF
+import torch.nn.functional as nnF
 
 from torch.utils.data import Dataset
 from transformers import Wav2Vec2Processor
 
+load_dotenv()
 
 def augment_audio(y, sr):
     """
@@ -18,6 +23,19 @@ def augment_audio(y, sr):
     :return: Augmented audio
     """
 
+    # Automatic GPU/CPU Detection
+    if torch.cuda.is_available():
+        DEVICE = torch.device('cuda')
+    else:
+        DEVICE = torch.device('cpu')
+    # print(f"Using device: {DEVICE}")
+
+    # Convert to torch tensor
+    if isinstance(y, np.ndarray):
+        y = torch.from_numpy(y).float()
+    else:
+        y = y.float()  # already a tensor
+
     # 1. Random gain (0.1 to 5.0)
     gain = np.random.uniform(0.1, 5.0)
     y = y * gain
@@ -25,37 +43,41 @@ def augment_audio(y, sr):
     # 2. Additive Gaussian noise (SNR 5 - 25 dB)
     if np.random.rand() < 0.7:
         snr_db = np.random.uniform(5, 25)
-        noise_std = np.sqrt(np.var(y)) / (10**(snr_db/20))
-        y = y + np.random.normal(0, noise_std, y.shape)
+        noise_std = torch.std(y) / (10**(snr_db/20))
+        y = y + torch.randn_like(y) * noise_std
 
     # 3. Speed perturbation (0.8 - 1.2) - changes duration and pitch
     if np.random.rand() < 0.7:
         speed = np.random.uniform(0.8, 1.2)
-        y = librosa.effects.time_stretch(y, rate=speed)
+        y, new_sr = taF.speed(y.unsqueeze(0), sr, speed)
+        y = y.squeeze(0)
 
     # 4. Pitch shift (+- 2 semitones)
     if np.random.rand() < 0.5:
-        n_steps = np.random.uniform(-2, 2)   # Halbtöne
-        y = librosa.effects.pitch_shift(y, sr=sr, n_steps=n_steps)
+        n_steps = np.random.randint(-2, 3)   # Halbtöne
+        y = taF.pitch_shift(y.unsqueeze(0), sr, n_steps).squeeze(0)
 
     # 5. Fixed length cropping/padding (48,000 samples at 16kHz)
     target_len = 48000
-    if len(y) > target_len:
-        start = np.random.randint(0, len(y) - target_len)
+    if y.size(0) > target_len:
+        start = np.random.randint(0, y.size(0) - target_len)
         y = y[start:start+target_len]
-    elif len(y) < target_len:
-        pad = target_len - len(y)
+    elif y.size(0) < target_len:
+        pad = target_len - y.size(0)
         pad_left = np.random.randint(0, pad)
         pad_right = pad - pad_left
-        y = np.pad(y, (pad_left, pad_right), 'constant')
+        y = nnF.pad(y, (pad_left, pad_right))
 
-    return y.astype(np.float32)
+    y = y.numpy().astype(np.float32)
+    y = np.squeeze(y)
+
+    return y.cpu().numpy().astype(np.float32)
 
 
 class ASVDataset(Dataset):
     """
     Class ASVDataset(Dataset): Dataset for ASVspoof2019 LA dataset
-    Custom dataset for ASVspoof data for reading the protocol into a DataFrame, pre-tokenizes, performs stratified sampling and returns a dict of processed data
+    Custom dataset for ASVspoof data for reading the protocol into a DataFrame, pre-tokenizes, performs stratified sampling, and returns a dict of processed data
     Returns:
         Dataset
     """
@@ -98,8 +120,9 @@ class ASVDataset(Dataset):
         self.attack_to_idx = {at: i for i, at in enumerate(self.attack_types)}
         self.ignore_attack_idx = -1 # Add a special 'ignore' index for bonafide and unkown attacks
 
-        #transcript_path = r'C:\Users\Luis\Griffith\Vishing_Project\Vishing_Detection\src\models\data\training\transcripts.csv'
-        transcript_path = r'C:\Users\Luis\Griffith\Vishing_Project\Vishing_Detection\src\models\data\training\transcripts.csv'
+        transcript_path = os.environ.get("TRANSCRIPT_PATH")
+        if not transcript_path:
+            raise ValueError("Set TRANSCRIPT_PATH in your .env file")
 
         if os.path.exists(transcript_path):
             transcript_df = pd.read_csv(transcript_path)
@@ -109,11 +132,11 @@ class ASVDataset(Dataset):
             print(f'Warning: File not found at: {transcript_path}. Transcripts are empty.')
             self.df['transcript'] = ''
 
-        # Optional: Stratified sampling to balance the classes
+        # Stratified sampling to balance the classes
         if samples:
             self.df = self._stratified_sample(samples)
 
-        # Pre‑tokenize all transcripts once (for efficiency)
+        # Pre‑tokenize all transcripts at once (for efficiency)
         self.transcript_ids = []
         self.transcript_masks = []
 
@@ -190,27 +213,18 @@ class ASVDataset(Dataset):
         # Resample if needed
         if sr != self.target_sr:
             y = librosa.resample(y, orig_sr = sr, target_sr = self.target_sr)
-            sr = self.target_sr
 
         # Convert to mono
         if y.ndim > 1:
-            y = y.mean(axis = 1)
-
-        if self.subset == 'train':
-            # Apply audio augmentation (only for training, not for dev/eval)
-            y = augment_audio(y, sr)
+            y = y.mean(axis=1)
 
         y = y.astype(np.float32)
 
-        # Process with Wav2Vec2Processor (normalises, extracts features, converts to PyTorch tensors)
-        inputs = self.processor(y, sampling_rate=self.target_sr, return_tensors='pt', return_attention_mask = True) # Normalization, Feature extraction (CNN), Conversion to PyTorch ('pt') tensors
-        input_values = inputs.input_values.squeeze(0) # # (seq_len,)
-        attention_mask = inputs.attention_mask.squeeze(0) # (seq_len,)
+        waveform = torch.from_numpy(y)
 
         # Return dict of processed data
         return {
-            'input_values': input_values,
-            'attention_mask': attention_mask,
+            'waveform': waveform,
             'transcript_ids': self.transcript_ids[index],
             'transcript_mask': self.transcript_masks[index],
             'label': torch.tensor(label, dtype=torch.long), # Dtype torch.long as expected by CrossEntropyLoss - Predicted probabilities compared to true labels

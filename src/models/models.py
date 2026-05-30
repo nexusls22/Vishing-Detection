@@ -14,13 +14,18 @@ class AudioEncoder(nn.Module): # Base class for nn (automatic param registration
         pooled: torch.Tensor = Tensor of shape (batch_size, hidden_size)
     """
 
-    def __init__(self, model_name='facebook/wav2vec2-base', freeze = False): # True = freezes all W2V2 params - Not updated during training / False unfreezes the params of the model, will be fine-tuned to the task with optimizer.step()
+    def __init__(self, model_name='facebook/wav2vec2-base', freeze = True, unfreeze_last_n = 0): # True = freezes all W2V2 params - Not updated during training / False unfreezes the params of the model, will be fine-tuned to the task with optimizer.step()
 
         super().__init__() # initializes base nn.Module to set up internal structures
         self.wav2vec2 = Wav2Vec2Model.from_pretrained(model_name, use_safetensors=True)
         if freeze:
             for param in self.wav2vec2.parameters(): # Iteration over all params (weights and biases) of the model
                 param.requires_grad = False # Params will not update if the model is frozen
+
+            if unfreeze_last_n > 0:
+                for layer in self.wav2vec2.encoder.layers[-unfreeze_last_n:]:
+                    for param in layer.parameters():
+                        param.requires_grad = True
 
     def forward(self, input_values, attention_mask):
 
@@ -42,7 +47,7 @@ class TextEncoder(nn.Module):
         pooled: torch.Tensor = Tensor of shape (batch_size, hidden_size)
     """
 
-    def __init__(self, freeze = False):
+    def __init__(self, freeze = True):
         super().__init__()
         self.tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased', weights_only = True) # Loads tokenizer (text into input IDs and attention masks)
         self.text_encoder = DistilBertModel.from_pretrained('distilbert-base-uncased', weights_only = True) # Loads pretrained model, outputs the last hidden states of all tokens
@@ -75,8 +80,8 @@ class MultimodalVishingDetector(nn.Module):
     def __init__(self, audio_dim = 768, text_dim = 768, fusion_dim = 512, embed_dim = 256, num_attack_classes = 19): # audio_dim & text_dim = Feature dim output of the respective encoders / fusion_dim size of the hidden layer inside the fusion network (maybe tuned on hp fine-tuning)
 
         super().__init__()
-        self.acoustic_encoder = AudioEncoder(freeze = False)
-        self.semantic_encoder = TextEncoder(freeze = False)
+        self.acoustic_encoder = AudioEncoder(freeze = True, unfreeze_last_n = 4)
+        self.semantic_encoder = TextEncoder(freeze = True)
         self.fusion = nn.Sequential( # Small feed-forward network - Takes concatenated feats as input outputs logits for the two classes
             nn.Linear(audio_dim + text_dim, fusion_dim),
             nn.ReLU(), # Introduces non-linearity (a straight line can't represent input, output relation)
