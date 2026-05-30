@@ -3,7 +3,9 @@ import torchaudio.functional as taF
 import torch.nn.functional as nnF
 
 
-def collate_fn(batch, target_sr = 16000, target_len = 48000, device = 'cuda'):
+def collate_fn(batch, target_sr = 16000, target_len = 48000, device = None):
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
     """
     collate_fn function to pad all samples to the same length, building attention mask to differentiate real data from padding
     Parameters:
