@@ -1,14 +1,7 @@
 """
-train_attack_head.py
-Fine-tunes only the auxiliary attack-type classifier head of a pre-trained
-MultimodalVishingDetector, leaving the rest of the model frozen.
-
-This two-stage approach keeps the binary detection performance intact
-while improving the model's ability to identify which specific spoofing
-algorithm was used (A01–A19 in the ASVspoof 2019 LA dataset).
-
-Run from the project root after train_binary.py has produced a checkpoint:
-    python src/models/train_attack_head.py
+Stage 2 training: fine-tunes only the attack-type classifier head on a frozen
+Stage 1 model. Keeping the rest frozen preserves binary detection performance
+while improving attack-type identification (A01-A19 in ASVspoof 2019 LA).
 """
 
 import os
@@ -26,7 +19,7 @@ load_dotenv()
 
 
 def compute_attack_accuracy(model_acc, dataloader, device):
-    """Computes top-1 accuracy on the auxiliary attack-type classification head."""
+    """Top-1 accuracy on the attack-type head (spoof samples only)."""
     model_acc.eval()
     correct, total = 0, 0
     with torch.no_grad():
@@ -39,25 +32,25 @@ def compute_attack_accuracy(model_acc, dataloader, device):
 
             _, aux_logits = model_acc(iv, am, ti, tm)
             preds = aux_logits.argmax(dim=-1)
-            mask  = ai != -1
+            mask = ai != -1
             correct += (preds[mask] == ai[mask]).sum().item()
-            total   += mask.sum().item()
+            total += mask.sum().item()
 
     return correct / total if total > 0 else 0.0
 
 
 if __name__ == '__main__':
-    DEVICE    = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     data_root = os.environ.get("ASV_DATA_ROOT")
     assert data_root, "Set ASV_DATA_ROOT in your .env file"
 
-    processor      = Wav2Vec2Processor.from_pretrained(
+    processor = Wav2Vec2Processor.from_pretrained(
         'facebook/wav2vec2-base', padding='max_length', max_length=16000 * 4, truncation=True
     )
     text_tokenizer = AutoTokenizer.from_pretrained('distilbert-base-uncased')
 
     train_ds = ASVDataset(data_root, 'train', processor, text_tokenizer)
-    dev_ds   = ASVDataset(data_root, 'dev',   processor, text_tokenizer)
+    dev_ds = ASVDataset(data_root, 'dev', processor, text_tokenizer)
 
     train_loader = torch.utils.data.DataLoader(
         train_ds, batch_size=64, shuffle=True,
@@ -68,11 +61,11 @@ if __name__ == '__main__':
         collate_fn=collate_fn, num_workers=0, pin_memory=False
     )
 
-    model      = MultimodalVishingDetector(embed_dim=256).to(DEVICE)
+    model = MultimodalVishingDetector(embed_dim=256).to(DEVICE)
     state_dict = torch.load('data/training/saves/best_model2.pth', weights_only=True)
     model.load_state_dict(state_dict)
 
-    # Freeze everything, then unfreeze only the auxiliary classifier
+    # Freeze the whole model, then unfreeze only the attack-type head.
     for param in model.parameters():
         param.requires_grad = False
     for name, param in model.named_parameters():
@@ -80,14 +73,14 @@ if __name__ == '__main__':
             param.requires_grad = True
             print(f'Unfrozen: {name}')
 
-    optimizer    = torch.optim.AdamW(
+    optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()), lr=1e-3, weight_decay=0.01
     )
-    scaler       = torch.amp.GradScaler('cuda')
+    scaler = torch.amp.GradScaler(DEVICE.type, enabled=DEVICE.type == 'cuda')
     criterion_aux = torch.nn.CrossEntropyLoss(ignore_index=-1)
     total_epochs = 50
-    best_acc     = 0.0
-    scheduler    = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_epochs)
+    best_acc = 0.0
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_epochs)
 
     for epoch in range(total_epochs):
         model.train()
@@ -101,7 +94,7 @@ if __name__ == '__main__':
             ai = batch['attack_idx'].to(DEVICE)
 
             optimizer.zero_grad()
-            with torch.amp.autocast(device_type='cuda'):
+            with torch.amp.autocast(device_type=DEVICE.type, enabled=DEVICE.type == 'cuda'):
                 _, aux_logits = model(iv, am, ti, tm)
                 loss          = criterion_aux(aux_logits, ai)
 

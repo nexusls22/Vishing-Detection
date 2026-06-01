@@ -1,13 +1,7 @@
 """
-app.py — Vishing Detection Gradio Interface
-Multimodal inference pipeline:
-  1. Uploaded audio is preprocessed (resample → pad/trim → normalise)
-  2. Whisper transcribes the audio to text
-  3. The MultimodalVishingDetector fuses both modalities and produces a 256-dim embedding
-  4. Cosine similarity to the pre-computed spoof prototype determines the verdict
-
-Run from the project root:
-    python src/app.py
+Gradio interface for the vishing detector. Audio is preprocessed and
+transcribed with Whisper, both modalities go through the detector, and the
+256-dim embedding is scored by cosine similarity to the spoof prototype.
 """
 
 import os
@@ -19,26 +13,22 @@ import whisper
 import gradio as gr
 from transformers import AutoTokenizer
 
-# Allows `from src.models.models import ...` when launched from the project root
+# Lets `from src.models.models import ...` resolve when launched from the root.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.models.models import MultimodalVishingDetector
 
-# ── Config ────────────────────────────────────────────────────────────────────
-MODEL_PATH   = os.path.join(os.path.dirname(__file__), 'models', 'best_model.pth')
-TARGET_SR    = 16_000
-TARGET_LEN   = 48_000   # 3 seconds at 16 kHz — matches training fixed length
+MODEL_PATH = os.path.join(os.path.dirname(__file__), 'models', 'best_model.pth')
+TARGET_SR = 16_000
+TARGET_LEN = 48_000   # 3 s at 16 kHz, matching the training fixed length
 MAX_TEXT_LEN = 128
-DEVICE       = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Maps aux_classifier output index → ASVspoof attack label (sorted A01–A19)
 IDX_TO_ATTACK = {i: f'A{i+1:02d}' for i in range(19)}
 
-# ── Model handles (populated by load_models() inside the __main__ guard) ───────
-# These must stay module-level globals so the inference helpers below can see
-# them, but they are only POPULATED in the main process. On Windows, transformers
-# may spawn a child process (e.g. for safetensors conversion) that re-imports this
-# module as "__mp_main__"; guarding the heavy loading prevents that child from
-# re-running everything and crashing.
+# These stay module-level so the inference helpers can read them, but are only
+# filled in by load_models() inside the __main__ guard. Keeping the heavy loading
+# out of import means a child process transformers may spawn on Windows (which
+# re-imports this module as __mp_main__) won't re-run it and crash.
 detector = None
 PROTO_BONAFIDE = PROTO_SPOOF = None
 THRESHOLD = 0.6297
@@ -47,15 +37,14 @@ tokenizer = None
 
 
 def load_models():
-    """Loads all models once at startup. Called only from the __main__ guard."""
     global detector, PROTO_BONAFIDE, PROTO_SPOOF, THRESHOLD, whisper_model, tokenizer
 
     print(f"[app] Device: {DEVICE}")
 
-    print("[app] Loading MultimodalVishingDetector …")
+    print("[app] Loading MultimodalVishingDetector...")
     detector = MultimodalVishingDetector(embed_dim=256).to(DEVICE)
-    state    = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=True)
-    result   = detector.load_state_dict(state, strict=False)
+    state = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=True)
+    result = detector.load_state_dict(state, strict=False)
     if result.missing_keys:
         print(f"  [warn] missing keys: {result.missing_keys[:5]}")
     if result.unexpected_keys:
@@ -65,31 +54,29 @@ def load_models():
 
     PROTO_PATH = os.path.join(os.path.dirname(__file__), 'models', 'prototypes.pt')
     if os.path.exists(PROTO_PATH):
-        _protos        = torch.load(PROTO_PATH, map_location=DEVICE, weights_only=True)
+        _protos = torch.load(PROTO_PATH, map_location=DEVICE, weights_only=True)
         PROTO_BONAFIDE = _protos['bonafide'].to(DEVICE)
-        PROTO_SPOOF    = _protos['spoof'].to(DEVICE)
-        THRESHOLD      = float(_protos.get('threshold', 0.6297))
-        print(f"[app] Prototypes loaded — threshold: {THRESHOLD}")
+        PROTO_SPOOF = _protos['spoof'].to(DEVICE)
+        THRESHOLD = float(_protos.get('threshold', 0.6297))
+        print(f"[app] Prototypes loaded, threshold: {THRESHOLD}")
     else:
-        print("[app] WARNING: prototypes.pt not found — run build_prototypes.py first.")
+        print("[app] WARNING: prototypes.pt not found, run build_prototypes.py first.")
 
-    print("[app] Loading Whisper (small) …")
+    print("[app] Loading Whisper (small)...")
     whisper_model = whisper.load_model("small", device=DEVICE)
     print("[app] Whisper loaded.")
 
-    print("[app] Loading DistilBERT tokenizer …")
+    print("[app] Loading DistilBERT tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained('distilbert-base-uncased')
     print("[app] Tokenizer loaded.")
 
-
-# ── Inference helpers ─────────────────────────────────────────────────────────
 
 def preprocess_audio(path: str) -> tuple[torch.Tensor, torch.Tensor]:
     """Loads and normalises audio to match the training preprocessing in collate_fn."""
     y, _ = librosa.load(path, sr=TARGET_SR, mono=True, dtype=np.float32)
     y = y[:TARGET_LEN] if len(y) >= TARGET_LEN else np.pad(y, (0, TARGET_LEN - len(y)))
     y = (y - y.mean()) / (y.std() + 1e-9)
-    input_values   = torch.from_numpy(y).unsqueeze(0).to(DEVICE)
+    input_values = torch.from_numpy(y).unsqueeze(0).to(DEVICE)
     attention_mask = torch.ones_like(input_values)
     return input_values, attention_mask
 
@@ -111,14 +98,9 @@ def tokenize(transcript: str) -> tuple[torch.Tensor, torch.Tensor]:
 
 
 def run_inference(audio_path: str) -> dict:
-    """
-    End-to-end inference for a single audio file.
-
-    Scoring uses cosine similarity to the spoof prototype vector — identical
-    to the method that produced the 2.79% EER in reconstruct_eer.py.
-    """
-    input_values, audio_mask  = preprocess_audio(audio_path)
-    transcript                = transcribe(audio_path)
+    """End-to-end inference for one file, scored against the spoof prototype."""
+    input_values, audio_mask = preprocess_audio(audio_path)
+    transcript = transcribe(audio_path)
     transcript_ids, text_mask = tokenize(transcript)
 
     with torch.no_grad():
@@ -128,22 +110,20 @@ def run_inference(audio_path: str) -> dict:
                 return_embeddings=True
             )
 
-        emb_norm  = torch.nn.functional.normalize(embedding.float(), dim=1)
+        emb_norm = torch.nn.functional.normalize(embedding.float(), dim=1)
         spoof_cos = torch.nn.functional.cosine_similarity(emb_norm, PROTO_SPOOF).item()
-        is_spoof  = spoof_cos > THRESHOLD
+        is_spoof = spoof_cos > THRESHOLD
 
-        attack_idx  = aux_logits.argmax(dim=-1).item()
+        attack_idx = aux_logits.argmax(dim=-1).item()
         attack_type = IDX_TO_ATTACK.get(attack_idx, f'Unknown ({attack_idx})')
 
     return {
-        'spoof_cos':   spoof_cos,
-        'is_spoof':    is_spoof,
+        'spoof_cos': spoof_cos,
+        'is_spoof': is_spoof,
         'attack_type': attack_type,
-        'transcript':  transcript,
+        'transcript': transcript,
     }
 
-
-# ── Gradio callback ───────────────────────────────────────────────────────────
 
 def predict(audio):
     if audio is None:
@@ -176,8 +156,6 @@ def predict(audio):
     return verdict, transcript_md
 
 
-# ── Gradio UI ─────────────────────────────────────────────────────────────────
-
 DESCRIPTION = (
     "Upload a call audio file. The system transcribes it with Whisper and "
     "feeds both the audio and the transcript into a multimodal Wav2Vec2 + DistilBERT "
@@ -199,7 +177,7 @@ with gr.Blocks(title="Vishing Detector", css=".output-box { min-height: 80px; }"
             run_btn = gr.Button("Analyse", variant="primary")
 
         with gr.Column(scale=1):
-            verdict_out    = gr.Markdown(
+            verdict_out = gr.Markdown(
                 label="Verdict",
                 value="*Upload a file and click Analyse.*",
                 elem_classes="output-box",
@@ -218,7 +196,6 @@ with gr.Blocks(title="Vishing Detector", css=".output-box { min-height: 80px; }"
     )
 
 
-# ── Launch ────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     load_models()
     demo.queue(max_size=4)

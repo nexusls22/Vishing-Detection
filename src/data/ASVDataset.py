@@ -1,18 +1,13 @@
 """
-ASVDataset.py
-PyTorch Dataset for the ASVspoof 2019 Logical Access (LA) corpus.
-
-Responsibilities:
-  - Reads the protocol file to get file names, labels and attack types
-  - Merges pre-computed Whisper transcripts from a CSV
-  - Pre-tokenises all transcripts at init time for efficiency
-  - Optionally performs stratified sampling to balance bonafide / spoof classes
-  - Returns raw waveforms (as tensors) alongside tokenised transcripts and labels
-    so that collate_fn can handle padding, augmentation and normalisation
+PyTorch Dataset for the ASVspoof 2019 LA corpus. Reads the protocol file, merges
+the pre-computed Whisper transcripts, pre-tokenises them at init, and returns raw
+waveforms plus tokenised transcripts and labels. Padding, augmentation and
+normalisation happen later in collate_fn.
 """
 
+from __future__ import annotations
+
 import os
-from dotenv import load_dotenv
 import librosa
 import numpy as np
 import soundfile as sf
@@ -21,36 +16,19 @@ import pandas as pd
 import torchaudio.functional as taF
 import torch.nn.functional as nnF
 
-from __future__ import annotations
-from typing import TYPE_CHECKING
-
+from dotenv import load_dotenv
 from torch.utils.data import Dataset
-
-if TYPE_CHECKING:
-    from transformers import Wav2Vec2Processor  # only used for type hints, not at runtime
+from transformers import Wav2Vec2Processor  # only used for type hints, not at runtime
 
 load_dotenv()
 
 
 def augment_audio(y, sr):
     """
-    Applies a randomised chain of augmentations to a waveform to prevent
-    the model from learning spurious shortcuts.
-
-    Augmentations applied (each with independent probability):
-      - Random gain scaling (always)
-      - Additive Gaussian noise (p=0.7, SNR 5–25 dB)
-      - Speed perturbation (p=0.7, factor 0.8–1.2)
-      - Pitch shift (p=0.5, ±2 semitones)
-      - Fixed-length crop/pad to 48 000 samples
-
-    Args:
-        y : 1-D float32 numpy array (waveform at 16 kHz)
-        sr: sample rate
-    Returns:
-        Augmented waveform as a 1-D float32 numpy array
+    Randomised augmentation chain for a 16 kHz waveform: gain (always), additive
+    noise (p=0.7), speed perturbation (p=0.7), pitch shift (p=0.5), then crop/pad
+    to 48000 samples. Returns a 1-D float32 array.
     """
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     y = torch.from_numpy(y).float() if isinstance(y, np.ndarray) else y.float()
 
@@ -58,14 +36,14 @@ def augment_audio(y, sr):
     y = y * gain
 
     if np.random.rand() < 0.7:
-        snr_db    = np.random.uniform(5, 25)
+        snr_db = np.random.uniform(5, 25)
         noise_std = torch.std(y) / (10 ** (snr_db / 20))
         y = y + torch.randn_like(y) * noise_std
 
     if np.random.rand() < 0.7:
-        speed  = np.random.uniform(0.8, 1.2)
-        y, _   = taF.speed(y.unsqueeze(0), sr, speed)
-        y      = y.squeeze(0)
+        speed = np.random.uniform(0.8, 1.2)
+        y, _ = taF.speed(y.unsqueeze(0), sr, speed)
+        y = y.squeeze(0)
 
     if np.random.rand() < 0.5:
         n_steps = np.random.randint(-2, 3)
@@ -76,8 +54,8 @@ def augment_audio(y, sr):
         start = np.random.randint(0, y.size(0) - target_len)
         y = y[start:start + target_len]
     elif y.size(0) < target_len:
-        pad       = target_len - y.size(0)
-        pad_left  = np.random.randint(0, pad)
+        pad = target_len - y.size(0)
+        pad_left = np.random.randint(0, pad)
         pad_right = pad - pad_left
         y = nnF.pad(y, (pad_left, pad_right))
 
@@ -86,20 +64,9 @@ def augment_audio(y, sr):
 
 class ASVDataset(Dataset):
     """
-    Dataset for ASVspoof 2019 LA (train / dev subsets).
-
-    At initialisation:
-      - Loads and parses the protocol file
-      - Merges transcript CSV (path from TRANSCRIPT_PATH env var)
-      - Pre-tokenises all transcripts (avoids repeated tokenisation at batch time)
-      - Optionally balances the dataset via stratified sampling
-
-    __getitem__ returns a dict with:
-      waveform: raw float32 tensor (variable length)
-      transcript_idx: pre-tokenised input IDs (fixed length 128)
-      transcript_mask: corresponding attention mask
-      label: 0 = bonafide, 1 = spoof
-      attack_idx: integer attack type index (-1 for bonafide)
+    ASVspoof 2019 LA train/dev dataset. __getitem__ returns a dict with the raw
+    waveform, the pre-tokenised transcript ids and mask, the binary label
+    (0 bonafide, 1 spoof) and the attack-type index (-1 for bonafide).
     """
 
     def __init__(self, data_root: str, subset: str, processor: Wav2Vec2Processor,
@@ -125,10 +92,10 @@ class ASVDataset(Dataset):
             names=['speaker_id', 'file_name', 'system_id', 'attack_type', 'label']
         )
 
-        # Build attack-type index from training labels (sorted for reproducibility)
+        # Sorted so the attack-type indices are stable across runs.
         self.attack_types = sorted(self.df[self.df['label'] == 'spoof']['attack_type'].unique())
         self.attack_to_idx = {at: i for i, at in enumerate(self.attack_types)}
-        self.ignore_attack_idx = -1  # used for bonafide samples in the aux loss
+        self.ignore_attack_idx = -1  # ignore bonafide samples, no attack type included
 
         transcript_path = os.environ.get('TRANSCRIPT_PATH')
         if not transcript_path:
@@ -145,7 +112,7 @@ class ASVDataset(Dataset):
         if samples:
             self.df = self._stratified_sample(samples)
 
-        # Pre-tokenise once — avoids repeated tokeniser calls inside the training loop
+        # Tokenise once up front rather than per batch in the training loop.
         self.transcript_ids   = []
         self.transcript_masks = []
         for _, row in self.df.iterrows():
@@ -197,9 +164,9 @@ class ASVDataset(Dataset):
             y = y.mean(axis=1)
 
         return {
-            'waveform':       torch.from_numpy(y.astype(np.float32)),
-            'transcript_ids':  self.transcript_ids[index],
+            'waveform': torch.from_numpy(y.astype(np.float32)),
+            'transcript_ids': self.transcript_ids[index],
             'transcript_mask': self.transcript_masks[index],
-            'label':           torch.tensor(label, dtype=torch.long),
-            'attack_idx':      torch.tensor(attack_idx, dtype=torch.long),
+            'label': torch.tensor(label, dtype=torch.long),
+            'attack_idx': torch.tensor(attack_idx, dtype=torch.long),
         }
