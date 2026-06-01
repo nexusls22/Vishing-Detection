@@ -49,6 +49,18 @@ def load_models():
         print(f"  [warn] missing keys: {result.missing_keys[:5]}")
     if result.unexpected_keys:
         print(f"  [warn] unexpected keys: {result.unexpected_keys[:5]}")
+    # best_model.pth is the Stage 1 checkpoint; its attack-type head is untrained.
+    # Overlay only the aux_classifier weights from the Stage 2 checkpoint so the
+    # attack-type output is meaningful. The binary path is left untouched.
+    ATTACK_PATH = os.path.join(os.path.dirname(__file__), 'models', 'best_attack_head.pth')
+    if os.path.exists(ATTACK_PATH):
+        attack_state = torch.load(ATTACK_PATH, map_location=DEVICE, weights_only=True)
+        aux_state = {k: v for k, v in attack_state.items() if k.startswith('aux_classifier')}
+        detector.load_state_dict(aux_state, strict=False)
+        print(f"[app] Attack-type head loaded ({len(aux_state)} tensors).")
+    else:
+        print("[app] WARNING: best_attack_head.pth not found, attack type will be unreliable.")
+
     detector.eval()
     print("[app] Detector loaded.")
 
